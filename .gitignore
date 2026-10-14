@@ -4,3 +4,8 @@ __pycache__/
 .pytest_cache/
 .idea/
 .vscode/
+
+# Runtime and temporary data
+data/runtime/
+*.tmp
+*.bak

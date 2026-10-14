@@ -1,0 +1,30 @@
+# Phân quyền sở hữu module và reviewer mặc định
+
+# Models (TV1 - Nhi)
+/src/models/ @Nhi
+/tests/test_models.py @Nhi
+
+# Đồ thị & Thuật toán (TV2 - Duy)
+/src/core/road_graph.py @Duy
+/src/core/strategies.py @Duy
+/tests/conftest.py @Duy
+/tests/test_algorithms.py @Duy
+
+# Điều phối & Undo/Redo (TV3 - Thông)
+/src/core/dispatcher.py @Thong
+/src/core/structures.py @Thong
+/src/core/undo_manager.py @Thong
+/tests/test_dispatcher.py @Thong
+
+# Lưu trữ & Dữ liệu mẫu (TV4 - Thắng)
+/src/core/json_storage.py @Thang
+/data/seed/ @Thang
+/tests/test_storage.py @Thang
+
+# Giao diện, Cấu hình môi trường & Tài liệu (TV5 - Long)
+/src/app.py @Long
+/src/ui/ @Long
+/docs/ @Long
+/README.md @Long
+/pyproject.toml @Long
+/uv.lock @Long
