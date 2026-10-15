@@ -1,4 +1,6 @@
 # Phân quyền sở hữu module và reviewer mặc định
+# Lưu ý: tên bên dưới phải là tài khoản GitHub thật có quyền write, và nhánh main cần bật
+# "Require review from Code Owners" thì quy tắc này mới được ép buộc.
 
 # Models (TV1 - Nhi)
 /src/models/ @Nhi
@@ -21,10 +23,16 @@
 /data/seed/ @Thang
 /tests/test_storage.py @Thang
 
-# Giao diện, Cấu hình môi trường & Tài liệu (TV5 - Long)
+# Giao diện, Tích hợp, Cấu hình môi trường & Tài liệu (TV5 - Long)
 /src/app.py @Long
 /src/ui/ @Long
+/src/core/__init__.py @Long
 /docs/ @Long
 /README.md @Long
 /pyproject.toml @Long
 /uv.lock @Long
+/.github/ @Long
+/tests/test_smoke.py @Long
+/tests/test_contract_api.py @Long
+/tests/test_ui_app.py @Long
+/tests/test_integration.py @Long
