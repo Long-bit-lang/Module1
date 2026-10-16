@@ -1,0 +1,8 @@
+{
+  "requests": [
+    {"id": "R1", "pickup_node": "N1", "dropoff_node": "N3", "status": "assigned"},
+    {"id": "R2", "pickup_node": "N2", "dropoff_node": "N5", "status": "assigned"},
+    {"id": "R3", "pickup_node": "N4", "dropoff_node": "N6", "status": "queued"},
+    {"id": "R4", "pickup_node": "N5", "dropoff_node": "N1", "status": "queued"}
+  ]
+}

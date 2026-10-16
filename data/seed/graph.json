@@ -1,0 +1,21 @@
+{
+  "nodes": [
+    {"id": "N1", "name": "Đại học Bách Khoa"},
+    {"id": "N2", "name": "Bến xe Trung tâm"},
+    {"id": "N3", "name": "Cầu Rồng"},
+    {"id": "N4", "name": "Sân bay Quốc tế"},
+    {"id": "N5", "name": "Ga Đà Nẵng"},
+    {"id": "N6", "name": "Chợ Hàn"}
+  ],
+  "edges": [
+    {"from": "N1", "to": "N2", "weight": 4.0},
+    {"from": "N2", "to": "N1", "weight": 4.0},
+    {"from": "N1", "to": "N3", "weight": 10.0},
+    {"from": "N2", "to": "N4", "weight": 6.0},
+    {"from": "N3", "to": "N4", "weight": 6.0},
+    {"from": "N4", "to": "N5", "weight": 5.0},
+    {"from": "N5", "to": "N3", "weight": 3.0},
+    {"from": "N3", "to": "N6", "weight": 4.0},
+    {"from": "N6", "to": "N1", "weight": 8.0}
+  ]
+}

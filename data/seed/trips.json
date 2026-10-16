@@ -1,0 +1,6 @@
+{
+  "trips": [
+    {"id": "T1", "request_id": "R1", "driver_id": "D1", "eta": 4.0, "status": "completed"},
+    {"id": "T2", "request_id": "R2", "driver_id": "D3", "eta": 12.0, "status": "assigned"}
+  ]
+}
