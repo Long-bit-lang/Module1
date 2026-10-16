@@ -257,13 +257,13 @@ class JsonStorage:
         if not isinstance(state, dict):
             raise StorageError("Trạng thái truyền vào save_all() phải là một dict.")
 
-        required_state_keys = ("graph", "drivers", "requests", "trips")
+        required_state_keys = ("graph", "drivers", "requests", "trips", "locations")
         for key in required_state_keys:
             if key not in state:
                 raise StorageError(f"Trạng thái truyền vào save_all() thiếu khóa bắt buộc: '{key}'.")
 
         graph: RoadGraph = state["graph"]
-        locations: dict[str, Location] = state.get("locations") or {}
+        locations: dict[str, Location] = state.get("locations")
 
         # 1. Chuẩn bị dữ liệu cho graph.json
         nodes_payload: list[dict[str, Any]] = []
@@ -271,7 +271,7 @@ class JsonStorage:
             if node_id in locations:
                 nodes_payload.append(locations[node_id].to_dict())
             else:
-                nodes_payload.append({"id": node_id, "name": node_id})
+                raise StorageError(f"Location và graph không đồng bộ: '{node_id}.")
 
         edges_payload: list[dict[str, Any]] = [
             {"from": u, "to": v, "weight": float(w)}
