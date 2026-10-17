@@ -1,13 +1,6 @@
 """TV5 - Entrypoint Streamlit chính cho hệ thống điều phối đặt xe thông minh."""
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 import streamlit as st
 
 from ui import session, tab_benchmark, tab_data, tab_dispatch

@@ -8,18 +8,13 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-try:
-    from src.core.road_graph import RoadGraph
-    from src.models.driver import Driver
-    from src.models.location import Location
-    from src.models.ride_request import RideRequest
-    from src.models.trip import Trip
-except ModuleNotFoundError:
-    from .road_graph import RoadGraph
-    from models.driver import Driver
-    from models.location import Location
-    from models.ride_request import RideRequest
-    from models.trip import Trip
+from core.road_graph import RoadGraph
+from models.driver import Driver
+from models.location import Location
+from models.ride_request import RideRequest
+from models.trip import Trip
+
+_ROOT = Path(__file__).resolve().parents[2]
 
 
 class StorageError(Exception):
@@ -38,8 +33,8 @@ class JsonStorage:
 
     def __init__(
         self,
-        seed_dir: str | Path = "data/seed",
-        runtime_dir: str | Path = "data/runtime",
+        seed_dir: str | Path = _ROOT / "data" / "seed",
+        runtime_dir: str | Path = _ROOT / "data" / "runtime",
     ) -> None:
         self.seed_dir = Path(seed_dir)
         self.runtime_dir = Path(runtime_dir)
@@ -270,7 +265,7 @@ class JsonStorage:
                 raise StorageError(f"Trạng thái truyền vào save_all() thiếu khóa bắt buộc: '{key}'.")
 
         graph: RoadGraph = state["graph"]
-        locations: dict[str, Location] = state.get("locations")
+        locations: dict[str, Location] = state.get("locations") or {}
 
         # 1. Chuẩn bị dữ liệu cho graph.json
         nodes_payload: list[dict[str, Any]] = []

@@ -37,7 +37,8 @@ def _load_real():
     if params[1:] != ["pickup_node", "dropoff_node"]:
         raise RuntimeError("Dispatcher.submit_request chưa đúng chữ ký CONTRACT")
 
-    storage = JsonStorage()
+    runtime = os.environ.get("RIDE_DISPATCH_RUNTIME_DIR")
+    storage = JsonStorage(runtime_dir=runtime) if runtime else JsonStorage()
     state = storage.load_all()
     dispatcher = Dispatcher.from_state(state)
     strategies = {name: cls() for name, cls in STRATEGIES.items()}
@@ -47,7 +48,7 @@ def _load_real():
 def init_session() -> None:
     if K_DISPATCHER in st.session_state:
         return
-    forced = os.environ.get("RIDE_DISPATCH_BACKEND", "auto").lower()
+    forced = os.environ.get("RIDE_DISPATCH_BACKEND", "real").lower()  # mặc định "real"; "auto" vẫn dùng được
     note, backend = "", None
     if forced != "mock":
         try:

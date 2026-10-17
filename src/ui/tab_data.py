@@ -6,6 +6,7 @@ import streamlit as st
 
 from . import session as S
 from .constants import BUSY, FREE, status_label
+from .graph_view import build_dot
 
 
 def _drivers_table(drivers: dict) -> pd.DataFrame:
@@ -59,56 +60,6 @@ def _on_reload() -> None:
     S.flash("info", "Đã nạp lại dữ liệu từ đĩa; lịch sử Undo/Redo đã được đặt lại.")
 
 
-def _dot(edges, drivers: dict) -> str:
-    """Tạo biểu đồ Graphviz rõ ràng, hiển thị topology mạng lưới và số lượng tài xế."""
-    lines = [
-        "digraph G {",
-        "  rankdir=LR;",
-        "  bgcolor=\"transparent\";",
-        "  node [fontname=\"Helvetica,Arial,sans-serif\", fontsize=11, shape=box, style=\"rounded,filled\", margin=\"0.2,0.1\"];",
-        "  edge [fontname=\"Helvetica,Arial,sans-serif\", fontsize=10, color=\"#64748b\", fontcolor=\"#0f172a\", penwidth=1.5, arrowsize=0.8];",
-    ]
-
-    # Nhóm tài xế theo từng đỉnh
-    drivers_at_node: dict[str, list[tuple[str, str, str]]] = {}
-    for d in drivers.values():
-        drivers_at_node.setdefault(d.node, []).append((d.id, d.name, d.status))
-
-    for n in S.dispatcher().graph.nodes():
-        node_name = S.node_label(n)
-        drvs = drivers_at_node.get(n, [])
-        if drvs:
-            free_in_node = sum(1 for _, _, s in drvs if s == FREE)
-            busy_in_node = len(drvs) - free_in_node
-            
-            badge_parts = []
-            if free_in_node:
-                badge_parts.append(f"{free_in_node} rảnh")
-            if busy_in_node:
-                badge_parts.append(f"{busy_in_node} bận")
-            badge = f"\\n[{', '.join(badge_parts)}]"
-
-            if free_in_node > 0:
-                fillcolor = "#ecfdf5"
-                color = "#10b981"
-            else:
-                fillcolor = "#fef2f2"
-                color = "#ef4444"
-            lines.append(
-                f'  "{n}" [label="{node_name}{badge}", fillcolor="{fillcolor}", color="{color}", penwidth=2.0];'
-            )
-        else:
-            lines.append(
-                f'  "{n}" [label="{node_name}", fillcolor="#f8fafc", color="#cbd5e1", penwidth=1.2];'
-            )
-
-    for u, v, w in edges:
-        lines.append(f'  "{u}" -> "{v}" [label="{w:g}p"];')
-
-    lines.append("}")
-    return "\n".join(lines)
-
-
 def render() -> None:
     d = S.dispatcher()
     drivers = d.drivers_snapshot()
@@ -135,7 +86,7 @@ def render() -> None:
     c_graph, c_tables = st.columns([3, 2])
     with c_graph:
         with st.container(border=True):
-            st.graphviz_chart(_dot(edges, drivers), width="stretch")
+            st.graphviz_chart(build_dot(edges, drivers, d.queue_snapshot(), S.node_label, nodes), width="stretch")
     with c_tables:
         with st.container(border=True):
             st.markdown("**Danh sách Tuyến đường**")
@@ -159,7 +110,7 @@ def render() -> None:
         with st.form("form_add_driver", border=True):
             st.text_input("Tên tài xế", key="add_name", placeholder="Nhập họ tên tài xế...")
             st.selectbox("Vị trí xuất phát", labels, key="add_node")
-            st.form_submit_button("Thêm tài xế", on_click=_on_add_driver, type="primary", use_container_width=True)
+            st.form_submit_button("Thêm tài xế", on_click=_on_add_driver, type="primary", width="stretch")
 
     with col_edit:
         st.markdown("##### Cập nhật hoặc Xóa tài xế")
@@ -183,10 +134,19 @@ def render() -> None:
                     labels,
                     key=f"edit_node_{chosen}",
                     index=nodes.index(cur.node) if cur.node in nodes else 0,
+                    disabled=cur.status == BUSY,
                 )
                 c1, c2 = st.columns(2)
-                c1.button("Lưu thay đổi", on_click=_on_update_driver, key="btn_update_driver", use_container_width=True)
-                c2.button("Xóa tài xế", on_click=_on_remove_driver, key="btn_remove_driver", type="secondary", use_container_width=True)
+                c1.button("Lưu thay đổi", on_click=_on_update_driver, key="btn_update_driver", width="stretch")
+                c2.button(
+                    "Xóa tài xế",
+                    on_click=_on_remove_driver,
+                    key="btn_remove_driver",
+                    type="secondary",
+                    disabled=cur.status == BUSY,
+                    width="stretch",
+                )
+                st.caption("Tài xế đang bận hoặc đã có lịch sử chuyến không thể xóa.")
         else:
             st.info("Chưa có tài xế nào trong hệ thống.")
 

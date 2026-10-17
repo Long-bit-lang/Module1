@@ -14,11 +14,12 @@ from models.location import Location
 from models.ride_request import RideRequest
 from models.trip import Trip
 from .road_graph import RoadGraph
-from .strategies import MatchResult, MatchStrategy
+from .strategies import MatchResult, MatchStrategy, shortest_path
 from .structures import RequestQueue
 from .undo_manager import DispatchAction, UndoManager
 
 
+EMPTY_QUEUE, NO_FREE_DRIVER, NO_ROUTE = "empty_queue", "no_free_driver", "no_route"
 def _next_number(prefix: str, ids) -> int:
     """Find the next unused sequential number after existing IDs."""
     values = [
@@ -38,7 +39,7 @@ class Dispatcher:
         drivers: dict[str, Driver],
         trips: list[Trip] | None = None,
         all_requests: dict[str, RideRequest] | None = None,
-    ) -> None:
+   ) -> None:
         self.graph = graph
         self.drivers = dict(drivers)
         self.trips = list(trips) if trips is not None else []
@@ -56,15 +57,20 @@ class Dispatcher:
         self._next_driver_id = _next_number('D', self.drivers)
         self._next_request_id = _next_number('R', self.all_requests)
         self._next_trip_id = _next_number('T', (trip.id for trip in self.trips))
+        self.last_failure: str | None = None
 
     def _check_node(self, node: str) -> None:
         if not self.graph.has_node(node):
-            raise ValueError(f"Dinh {node!r} khong ton tai tren do thi")
+            raise ValueError(f"Đỉnh {node!r} không tồn tại trên đồ thị")
 
     def submit_request(self, pickup_node: str, dropoff_node: str) -> RideRequest:
         self._check_node(pickup_node)
         self._check_node(dropoff_node)
-        request = RideRequest(f'R{self._next_request_id}', pickup_node, dropoff_node)
+        if pickup_node == dropoff_node:
+            raise ValueError("Điểm đón và điểm trả phải khác nhau")
+        if shortest_path(self.graph, pickup_node, dropoff_node)[0] is None:
+            raise ValueError(f"Không có đường đi từ {pickup_node} đến {dropoff_node}")
+        request = RideRequest(f"R{self._next_request_id}", pickup_node, dropoff_node)
         self.all_requests[request.id] = request
         self.queue.enqueue(request)
         self._next_request_id += 1
@@ -77,38 +83,38 @@ class Dispatcher:
         self._next_driver_id += 1
         return driver
 
-    def update_driver(
-        self,
-        driver_id: str,
-        name: str | None = None,
-        node: str | None = None,
-    ) -> Driver:
-        driver = self.drivers[driver_id]
+    def update_driver(self, driver_id, name=None, node=None) -> Driver:
+        driver = self.drivers.get(driver_id)
+        if driver is None:
+            raise ValueError(f"Không có tài xế {driver_id}")
+        if name is not None and (not isinstance(name, str) or not name.strip()):
+            raise ValueError("Tên tài xế không được để trống")
         if node is not None:
             self._check_node(node)
-        if name is not None and (not isinstance(name, str) or not name.strip()):
-            raise ValueError('Ten tai xe khong duoc de trong')
+            if driver.status == BUSY and node != driver.node:
+                raise ValueError(f"Tài xế {driver_id} đang bận, không thể đổi vị trí")
         if name is not None:
             driver.name = name
         if node is not None:
             driver.node = node
         return driver
 
+
     def remove_driver(self, driver_id: str) -> bool:
         driver = self.drivers.get(driver_id)
         if driver is None:
             return False
         if driver.status == BUSY:
-            raise ValueError(f'Tai xe {driver_id} dang ban')
+            raise ValueError(f'Tài xế {driver_id} đang bận')
         # Historical Trips would keep dangling driver IDs after deletion.
         # Discuss this extra guard with Long/Thang before final integration.
         if any(trip.driver_id == driver_id for trip in self.trips):
-            raise ValueError(f'Tai xe {driver_id} dang duoc tham chieu boi lich su chuyen')
+            raise ValueError(f'Tài xế {driver_id} đang được tham chiếu bởi lịch sử chuyến')
         if any(
             a.driver_id == driver_id
             for a in self._history_actions()
         ):
-            raise ValueError(f'Tai xe {driver_id} con lich su Undo/Redo')
+            raise ValueError(f'Tài xế {driver_id} còn lịch sử Undo/Redo')
         del self.drivers[driver_id]
         return True
 
@@ -123,24 +129,24 @@ class Dispatcher:
             yield from items
 
     def dispatch_next(self, strategy: MatchStrategy) -> Trip | None:
+        self.last_match_result, self.last_failure = None, None
         request = self.queue.peek()
         if request is None:
+            self.last_failure = EMPTY_QUEUE
             return None
-        free_drivers = {
-            driver_id: driver.node
-            for driver_id, driver in self.drivers.items()
-            if driver.status == FREE
-        }
+        free_drivers = {i: d.node for i, d in self.drivers.items() if d.status == FREE}
         if not free_drivers:
+            self.last_failure = NO_FREE_DRIVER
             return None
         result = strategy.find_driver(self.graph, request.pickup_node, free_drivers)
         self.last_match_result = result
         if result.driver_id is None or result.eta is None:
+            self.last_failure = NO_ROUTE
             return None
         if result.driver_id not in free_drivers:
-            raise ValueError('Chien luoc tra ve tai xe khong ranh / khong ton tai')
+            raise ValueError('Chiến lược trả về tài xế không rảnh / không tồn tại')
         if isinstance(result.eta, bool) or not isfinite(result.eta) or result.eta < 0:
-            raise ValueError('Chien luoc tra ve ETA khong hop le')
+            raise ValueError('Chiến lược trả về ETA không hợp lệ')
 
         driver = self.drivers[result.driver_id]
         trip = Trip(f'T{self._next_trip_id}', request.id, driver.id, result.eta)
@@ -162,6 +168,19 @@ class Dispatcher:
         self._next_trip_id += 1
         return trip
 
+    def dispatch_all(self, strategy: MatchStrategy) -> list[Trip]:
+        trips: list[Trip] = []
+        while (trip := self.dispatch_next(strategy)) is not None:
+            trips.append(trip)
+        return trips
+
+    def ride_estimate(self, request_id: str) -> tuple[float, list[str]] | None:
+        req = self.all_requests.get(request_id)
+        if req is None:
+            return None
+        eta, path, _ = shortest_path(self.graph, req.pickup_node, req.dropoff_node)
+        return None if eta is None else (eta, path)
+
     def complete_trip(self, trip_id: str) -> bool:
         trip = next((trip for trip in self.trips if trip.id == trip_id), None)
         if trip is None or trip.status == COMPLETED:
@@ -171,6 +190,8 @@ class Dispatcher:
         driver.node = request.dropoff_node
         driver.release()
         trip.status = COMPLETED
+        self.undo_manager.undo_stack.clear()
+        self.undo_manager.redo_stack.clear()
         return True
 
     def _peek_action(self, stack) -> DispatchAction | None:
@@ -241,7 +262,7 @@ class Dispatcher:
         requests = state.get('requests', [])
         all_requests = {request.id: request for request in requests}
         if len(all_requests) != len(requests):
-            raise ValueError('Trung ID yeu cau trong state')
+            raise ValueError('Trùng ID yêu cầu trong state')
         dispatcher = cls(
             graph=state['graph'],
             drivers=state['drivers'],

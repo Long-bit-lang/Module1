@@ -422,3 +422,41 @@ def test_remove_driver_referenced_by_completed_trip_is_rejected(graph_for_dispat
     dispatcher.complete_trip(trip.id)
     with pytest.raises(ValueError):
         dispatcher.remove_driver('D1')
+
+
+def test_submit_rejects_unreachable_dropoff(graph_for_dispatcher):
+    d = Dispatcher(graph_for_dispatcher, {})
+    with pytest.raises(ValueError):
+        d.submit_request('N1', 'N5')  # N5 cô lập
+    assert d.all_requests == {}
+
+
+def test_failure_reasons(graph_for_dispatcher):
+    d = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N5')})
+    assert d.dispatch_next(DijkstraPerDriver()) is None and d.last_failure == 'empty_queue'
+    d.submit_request('N3', 'N4')
+    assert d.dispatch_next(DijkstraPerDriver()) is None and d.last_failure == 'no_route'
+    d.drivers['D1'].status = BUSY
+    assert d.dispatch_next(DijkstraPerDriver()) is None and d.last_failure == 'no_free_driver'
+
+
+def test_dispatch_all_and_stepwise_undo(graph_for_dispatcher):
+    d = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1'),
+                                          'D2': Driver('D2', 'Binh', 'N2')})
+    d.submit_request('N3', 'N4')
+    d.submit_request('N2', 'N4')
+    assert len(d.dispatch_all(ReverseDijkstra())) == 2
+    assert d.last_failure == 'empty_queue'
+    assert d.undo() and d.undo() and not d.can_undo()
+
+
+def test_complete_trip_clears_history_and_busy_driver_cannot_move(graph_for_dispatcher):
+    d = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1')})
+    d.submit_request('N3', 'N4')
+    d.submit_request('N2', 'N4')
+    t1 = d.dispatch_next(FakeStrategy('D1'))
+    with pytest.raises(ValueError):
+        d.update_driver('D1', node='N2')
+    d.complete_trip(t1.id)
+    assert not d.can_undo() and not d.can_redo()
+

@@ -4,19 +4,15 @@ import json
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-
 import pytest
 
-from src.core.json_storage import JsonStorage, StorageError
-from src.core.road_graph import RoadGraph
-from src.models.driver import BUSY, FREE, Driver
-from src.models.location import Location
-from src.models.ride_request import RideRequest
-from src.models.trip import Trip
-
-from src.models import ASSIGNED, COMPLETED, QUEUED
+from core.json_storage import JsonStorage, StorageError
+from core.road_graph import RoadGraph
+from models import ASSIGNED, COMPLETED, QUEUED
+from models.driver import BUSY, FREE, Driver
+from models.location import Location
+from models.ride_request import RideRequest
+from models.trip import Trip
 
 def _write_json(path: Path, data: dict | list) -> None:
     """Hàm phụ trợ ghi nhanh dữ liệu JSON vào file trong thư mục tạm."""

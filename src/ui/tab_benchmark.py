@@ -3,15 +3,45 @@ from __future__ import annotations
 
 import os
 import platform
+import random
 import statistics
 
 import pandas as pd
 import streamlit as st
 
+from core.road_graph import RoadGraph
+from core.strategies import STRATEGIES
 from . import session as S
 from .constants import FREE
 
 K_BENCH = "benchmark_result"
+
+
+def _scaling(n_nodes=300, n_edges=1200, ks=(1, 2, 5, 10, 25, 50, 100), seed=7) -> pd.DataFrame:
+    rng = random.Random(seed)
+    nodes = [f"N{i}" for i in range(n_nodes)]
+    g = RoadGraph()
+    for n in nodes:
+        g.add_node(n)
+    for i, n in enumerate(nodes):  # vòng bao đảm bảo liên thông
+        g.add_edge(n, nodes[(i + 1) % n_nodes], rng.randint(1, 10))
+    for _ in range(n_edges - n_nodes):
+        u, v = rng.sample(nodes, 2)
+        g.add_edge(u, v, rng.randint(1, 20))
+    pickup, rows = rng.choice(nodes), []
+    for k in ks:
+        drivers = {f"D{i}": rng.choice(nodes) for i in range(k)}
+        for name, cls in STRATEGIES.items():
+            runs = [cls().find_driver(g, pickup, drivers) for _ in range(10)]
+            rows.append(
+                {
+                    "Số tài xế rảnh": k,
+                    "Thuật toán": name,
+                    "Số đỉnh đã thăm": runs[0].visited_count,
+                    "Runtime trung vị (ms)": statistics.median(r.runtime_ms for r in runs),
+                }
+            )
+    return pd.DataFrame(rows)
 
 
 def _run(pickups: list[str], repeats: int) -> dict:
@@ -33,7 +63,7 @@ def _run(pickups: list[str], repeats: int) -> dict:
                     "Tài xế": res.driver_id,
                     "ETA (phút)": res.eta,
                     "Số đỉnh đã thăm": res.visited_count,
-                    "Runtime TB (ms)": statistics.fmean(times),
+                    "Runtime trung vị (ms)": statistics.median(times),
                 }
             )
     return {"rows": rows, "free": len(free), "repeats": repeats}
@@ -88,7 +118,7 @@ def render() -> None:
             value=20,
             step=5,
             key="bench_repeats",
-            help="Số lần chạy lặp để lấy trung bình thời gian thực thi (ms)",
+            help="Số lần chạy lặp để lấy thời gian thực thi trung vị (ms)",
         )
     with c3:
         run_btn = st.button(
@@ -96,7 +126,7 @@ def render() -> None:
             key="btn_bench",
             type="primary",
             disabled=not pickups or free == 0,
-            use_container_width=True,
+            width="stretch",
         )
 
     if free == 0:
@@ -108,6 +138,17 @@ def render() -> None:
                 st.session_state[K_BENCH] = _run(pickups, int(repeats))
         except Exception as exc:
             st.error(f"Không chạy được đối chuẩn: {exc}")
+
+    # Thử nghiệm mở rộng quy mô (luôn hiển thị để minh chứng A2 vượt trội khi k lớn)
+    with st.expander("Thử nghiệm mở rộng quy mô (đồ thị 300 đỉnh, tăng số tài xế rảnh)"):
+        if st.button("Chạy thử nghiệm mở rộng", key="btn_scaling", width="stretch"):
+            with st.spinner("Đang chạy đối chuẩn trên đồ thị lớn 300 đỉnh..."):
+                st.session_state["scaling"] = _scaling()
+        sc = st.session_state.get("scaling")
+        if sc is not None:
+            for col in ("Số đỉnh đã thăm", "Runtime trung vị (ms)"):
+                st.markdown(f"**{col}**")
+                st.line_chart(sc.pivot(index="Số tài xế rảnh", columns="Thuật toán", values=col))
 
     result = st.session_state.get(K_BENCH)
     if not result:
@@ -126,20 +167,20 @@ def render() -> None:
 
     # 2. Tổng hợp chỉ số hiệu năng
     st.subheader("Bảng Tổng hợp Hiệu năng")
-    summary = df.groupby("Thuật toán")[["Số đỉnh đã thăm", "Runtime TB (ms)"]].mean()
+    summary = df.groupby("Thuật toán")[["Số đỉnh đã thăm", "Runtime trung vị (ms)"]].median()
     st.dataframe(summary, width="stretch")
 
     # Thẻ KPI so sánh
     if len(summary) >= 2:
         names = list(summary.index)
         v1, v2 = summary.loc[names[0], "Số đỉnh đã thăm"], summary.loc[names[1], "Số đỉnh đã thăm"]
-        t1, t2 = summary.loc[names[0], "Runtime TB (ms)"], summary.loc[names[1], "Runtime TB (ms)"]
+        t1, t2 = summary.loc[names[0], "Runtime trung vị (ms)"], summary.loc[names[1], "Runtime trung vị (ms)"]
 
         kp1, kp2 = st.columns(2)
         with kp1:
             diff_v = ((v2 - v1) / v1 * 100) if v1 else 0
             st.metric(
-                label=f"Số đỉnh đã thăm trung bình ({names[1]} so với {names[0]})",
+                label=f"Số đỉnh đã thăm ({names[1]} so với {names[0]})",
                 value=f"{v2:.1f} đỉnh",
                 delta=f"{diff_v:+.1f}% (ít đỉnh hơn là tối ưu hơn)",
                 delta_color="inverse",
@@ -147,7 +188,7 @@ def render() -> None:
         with kp2:
             diff_t = ((t2 - t1) / t1 * 100) if t1 else 0
             st.metric(
-                label=f"Thời gian thực thi trung bình ({names[1]} so với {names[0]})",
+                label=f"Thời gian thực thi ({names[1]} so với {names[0]})",
                 value=f"{t2:.3f} ms",
                 delta=f"{diff_t:+.1f}% (nhanh hơn là tối ưu hơn)",
                 delta_color="inverse",
@@ -157,17 +198,17 @@ def render() -> None:
     ca, cb = st.columns(2)
     with ca:
         with st.container(border=True):
-            st.markdown("**Số đỉnh đã thăm trung bình (Càng ít càng tối ưu)**")
+            st.markdown("**Số đỉnh đã thăm (Càng ít càng tối ưu)**")
             st.bar_chart(summary["Số đỉnh đã thăm"], color="#3b82f6")
     with cb:
         with st.container(border=True):
-            st.markdown("**Thời gian chạy trung bình (ms) (Càng nhanh càng tối ưu)**")
-            st.bar_chart(summary["Runtime TB (ms)"], color="#10b981")
+            st.markdown("**Thời gian chạy trung vị (ms) (Càng nhanh càng tối ưu)**")
+            st.bar_chart(summary["Runtime trung vị (ms)"], color="#10b981")
 
     # 3. Bảng dữ liệu chi tiết
     st.subheader("Dữ liệu Chi tiết từng Điểm đón")
     display_df = df[
-        ["Tên địa danh", "Thuật toán", "Tài xế", "ETA (phút)", "Số đỉnh đã thăm", "Runtime TB (ms)"]
+        ["Tên địa danh", "Thuật toán", "Tài xế", "ETA (phút)", "Số đỉnh đã thăm", "Runtime trung vị (ms)"]
     ]
     st.dataframe(display_df, hide_index=True, width="stretch", height=240)
 

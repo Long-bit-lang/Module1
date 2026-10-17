@@ -197,3 +197,5 @@ STRATEGIES: dict[str, type[MatchStrategy]] = {
     DijkstraPerDriver.name: DijkstraPerDriver,
     ReverseDijkstra.name: ReverseDijkstra,
 }
+
+shortest_path = _shortest_path  # API công khai cho Dispatcher dùng

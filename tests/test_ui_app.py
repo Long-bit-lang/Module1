@@ -76,12 +76,27 @@ def test_busy_driver_cannot_be_removed(app):
     app.button(key="btn_dispatch").click().run()
     busy = next(d for d in _d(app).drivers_snapshot().values() if d.status == "busy")
     _pick(app, "edit_driver", busy.id)
-    app.button(key="btn_remove_driver").click().run()
+    btn = app.button(key="btn_remove_driver")
+    assert btn.disabled
     assert busy.id in _d(app).drivers_snapshot()
-    assert any("đang bận" in e.value for e in app.error)
 
 
 def test_benchmark_tab_runs_and_strategies_agree(app):
     app.button(key="btn_bench").click().run()
     assert not app.exception
     assert any("cùng tài xế và ETA" in s.value for s in app.success)
+
+
+@pytest.fixture
+def real_app(monkeypatch, tmp_path):
+    monkeypatch.setenv("RIDE_DISPATCH_BACKEND", "real")
+    monkeypatch.setenv("RIDE_DISPATCH_RUNTIME_DIR", str(tmp_path))
+    return AppTest.from_file(APP, default_timeout=30).run()
+
+
+def test_real_backend_dispatch_persists_and_tiebreaks(real_app, tmp_path):
+    assert not real_app.exception
+    real_app.button(key="btn_dispatch").click().run()  # R3: pickup N4, D1 và D2 cùng ETA 6
+    trip = _d(real_app).trips_snapshot()[-1]
+    assert (trip.driver_id, trip.eta) == ("D1", 6.0)  # hòa ETA thì chọn ID nhỏ nhất
+    assert '"T3"' in (tmp_path / "trips.json").read_text(encoding="utf-8")
