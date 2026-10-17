@@ -8,11 +8,18 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from src.core.road_graph import RoadGraph
-from src.models.driver import Driver
-from src.models.location import Location
-from src.models.ride_request import RideRequest
-from src.models.trip import Trip
+try:
+    from src.core.road_graph import RoadGraph
+    from src.models.driver import Driver
+    from src.models.location import Location
+    from src.models.ride_request import RideRequest
+    from src.models.trip import Trip
+except ModuleNotFoundError:
+    from .road_graph import RoadGraph
+    from models.driver import Driver
+    from models.location import Location
+    from models.ride_request import RideRequest
+    from models.trip import Trip
 
 
 class StorageError(Exception):

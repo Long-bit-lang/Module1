@@ -1,31 +1,69 @@
-"""TV5 - Entrypoint Streamlit (mỏng). Chỉ cấu hình trang và điều hướng tab.
+"""TV5 - Entrypoint Streamlit chính cho hệ thống điều phối đặt xe thông minh."""
+from __future__ import annotations
 
-Chạy: uv run streamlit run src/app.py
-Logic giao diện nằm trong src/ui/; UI chỉ gọi Dispatcher / JsonStorage qua API công khai.
-"""
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import streamlit as st
 
 from ui import session, tab_benchmark, tab_data, tab_dispatch
+from ui.constants import ASSIGNED, COMPLETED, FREE
+from ui.styles import CUSTOM_CSS
 
-st.set_page_config(page_title="Điều phối đặt xe", page_icon="🚕", layout="wide")
-st.title("🚕 Hệ thống Điều phối Đặt xe Thông minh")
-
+st.set_page_config(
+    page_title="Điều phối đặt xe",
+    page_icon="🚕",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 session.init_session()
 
+# ── Tiêu đề ──────────────────────────────────────────────────────────────────
+st.title("🚕 Hệ thống Điều phối Đặt xe Thông minh")
+st.caption("Tối ưu hóa hành trình trên đồ thị giao thông · Dijkstra A1/A2 · Hàng đợi FIFO · Undo/Redo")
+
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.header("Trạng thái hệ thống")
     if st.session_state[session.K_MODE] == "mock":
-        st.warning("Đang chạy bằng **backend giả lập** (mock): dữ liệu không ghi ra đĩa.")
+        st.warning("Đang chạy backend **giả lập** (mock)")
         st.caption(st.session_state[session.K_NOTE])
     else:
-        st.success("Đang chạy bằng **backend thật** (JsonStorage + Dispatcher).")
-    d = session.dispatcher()
-    st.metric("Yêu cầu đang chờ", len(d.queue_snapshot()))
-    st.metric("Chuyến đã tạo", len(d.trips_snapshot()))
+        st.success("Backend **thật** (JsonStorage + Dispatcher)")
 
+    d = session.dispatcher()
+    drivers = d.drivers_snapshot()
+    queue = d.queue_snapshot()
+    trips = d.trips_snapshot()
+    free = sum(1 for x in drivers.values() if x.status == FREE)
+
+    st.divider()
+    c1, c2 = st.columns(2)
+    c1.metric("Tài xế rảnh", f"{free}/{len(drivers)}")
+    c2.metric("Hàng đợi", len(queue))
+
+    c3, c4 = st.columns(2)
+    c3.metric("Chuyến đang chạy", sum(1 for t in trips if t.status == ASSIGNED))
+    c4.metric("Đã hoàn thành", sum(1 for t in trips if t.status == COMPLETED))
+
+    st.divider()
+    st.markdown(
+        "**Lưu ý:** Undo/Redo giữ qua các lần rerun nhưng "
+        "mất khi tải lại trang (F5). Hoàn thành chuyến sẽ xóa "
+        "lịch sử Undo/Redo."
+    )
+
+# ── Flash messages (ngay trước tabs, gần khu vực thao tác) ────────────────────
 session.render_flash()
 
-t_data, t_dispatch, t_bench = st.tabs(["Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán"])
+# ── Tabs ──────────────────────────────────────────────────────────────────────
+t_data, t_dispatch, t_bench = st.tabs(
+    ["Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán"]
+)
 with t_data:
     tab_data.render()
 with t_dispatch:

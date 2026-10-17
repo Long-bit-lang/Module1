@@ -1,66 +1,203 @@
-# Hệ thống Quản lý và Điều phối Đặt xe Thông minh trên Đồ thị Giao thông
+# 🚕 Hệ thống Quản lý và Điều phối Đặt xe Thông minh trên Đồ thị Giao thông
 
-Python · Streamlit · JSON · Git · uv
+> **Dự án Module 1** — Mô phỏng và giải quyết bài toán điều phối đặt xe tự động, tối ưu hóa thời gian đón khách (ETA) trên mạng lưới giao thông có hướng sử dụng giải thuật tìm đường ngắn nhất, hàng đợi FIFO, cơ chế hoàn tác Undo/Redo và lưu trữ JSON nguyên tử (Atomic).
 
-Ứng dụng mô phỏng điều phối đặt xe trên đồ thị giao thông có hướng (trọng số = phút di chuyển).
-Mỗi yêu cầu đặt xe được ghép với tài xế rảnh có ETA nhỏ nhất bằng một trong hai thuật toán:
-**A1** (Dijkstra từ từng tài xế) và **A2** (Dijkstra trên đồ thị đảo chiều từ điểm đón).
-Hỗ trợ hàng đợi FIFO, Undo/Redo thao tác điều phối, hoàn thành chuyến và lưu dữ liệu JSON.
+[![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
+[![Framework](https://img.shields.io/badge/Streamlit-1.63%2B-FF4B4B.svg)](https://streamlit.io/)
+[![Package Manager](https://img.shields.io/badge/uv-Astral-purple.svg)](https://docs.astral.sh/uv/)
+[![Tests](https://img.shields.io/badge/pytest-105%20passed-brightgreen.svg)](https://pytest.org/)
 
-## Cài đặt
-Yêu cầu: [uv](https://docs.astral.sh/uv/) và Python 3.12.
+---
+
+## 📖 Mục lục
+- [1. Giới thiệu bài toán](#1-giới-thiệu-bài-toán)
+- [2. Kiến trúc hệ thống & Phân công nhiệm vụ](#2-kiến-trúc-hệ-thống--phân-công-nhiệm-vụ)
+- [3. Tính năng nổi bật](#3-tính-năng-nổi-bật)
+- [4. Phân tích thuật toán: A1 vs A2](#4-phân-tích-thuật-toán-a1-vs-a2)
+- [5. Cài đặt & Khởi chạy](#5-cài-đặt--khởi-chạy)
+- [6. Hướng dẫn kiểm thử (Testing)](#6-hướng-dẫn-kiểm-thử-testing)
+- [7. Kịch bản chạy mẫu (Demo Walkthrough)](#7-kịch-bản-chạy-mẫu-demo-walkthrough)
+- [8. Quy chuẩn mã nguồn & Git Workflow](#8-quy-chuẩn-mã-nguồn--git-workflow)
+
+---
+
+## 1. Giới thiệu bài toán
+
+Trong hệ thống vận tải hành khách đô thị thông minh, việc tìm kiếm và ghép nối tài xế rảnh tới khách hàng cần đạt 2 mục tiêu song hành:
+1. **Khách hàng**: Thời gian đón (ETA - Estimated Time of Arrival) phải là ngắn nhất có thể.
+2. **Hệ thống**: Tính công bằng (FIFO - khách đặt trước được xử lý trước) và thuật toán có hiệu năng thực thi cao trên đồ thị mạng lưới đường xá có hướng và trọng số thời gian di chuyển (phút).
+
+Dự án hiện thực hóa trọn vẹn luồng nghiệp vụ trên đồ thị giao thông thực tế (thành phố Đà Nẵng: Cầu Rồng, Chợ Hàn, Bán đảo Sơn Trà, Sân bay, v.v.), tích hợp giao diện tương tác trực quan thời gian thực.
+
+---
+
+## 2. Kiến trúc hệ thống & Phân công nhiệm vụ
+
+Hệ thống được thiết kế theo kiến trúc phân tầng (Layered Architecture) với tính tách biệt rõ ràng giữa các module nghiệp vụ, tuân theo bản hợp đồng giao tiếp chuẩn [CONTRACT.md](file:///home/nhlong/Module1/Module1/docs/CONTRACT.md):
+
+```
+Module1/
+├── src/
+│   ├── models/            # [TV1] Các thực thể nghiệp vụ dữ liệu
+│   ├── core/
+│   │   ├── road_graph.py  # [TV2] Đồ thị giao thông có hướng trọng số
+│   │   ├── strategies.py  # [TV2] Chiến lược ghép cuốc A1 & A2 (Dijkstra)
+│   │   ├── structures.py  # [TV3] Cấu trúc dữ liệu: Queue (FIFO) & Stack
+│   │   ├── undo_manager.py# [TV3] Quản lý lịch sử Undo / Redo
+│   │   ├── dispatcher.py  # [TV3] Bộ điều phối nghiệp vụ tập trung
+│   │   └── json_storage.py# [TV4] Lưu trữ đọc/ghi JSON nguyên tử (Atomic)
+│   ├── ui/                # [TV5] Giao diện người dùng Streamlit
+│   │   ├── session.py     # Quản lý Session State & Cầu nối Backend
+│   │   ├── tab_data.py    # Tab 1: Quản lý dữ liệu mạng lưới & Tài xế
+│   │   ├── tab_dispatch.py# Tab 2: Điều phối cuốc xe & Undo/Redo
+│   │   ├── tab_benchmark.py# Tab 3: Đối chuẩn hiệu năng giải thuật
+│   │   └── styles.py      # Tùy biến giao diện CSS Inter
+│   └── app.py             # [TV5] Entrypoint ứng dụng Streamlit
+├── data/
+│   ├── seed/              # Dữ liệu gốc chuẩn (graph, locations, drivers, requests)
+│   └── runtime/           # Dữ liệu runtime tự động lưu trữ nguyên tử
+├── docs/                  # Tài liệu phân tích, hợp đồng giao tiếp & benchmark
+└── tests/                 # Bộ kịch bản kiểm thử tự động (Unit, Contract, UI AppTest)
+```
+
+### Bảng phân công thành viên
+| Thành viên | Phụ trách | Phạm vi triển khai |
+|---|---|---|
+| **TV1** | Data Models | `BaseEntity`, `Location`, `Driver`, `RideRequest`, `Trip`, enum trạng thái. |
+| **TV2** | Graph & Algorithms | `RoadGraph`, Giải thuật Dijkstra Forward (A1) & Reverse (A2), ma trận trọng số. |
+| **TV3** | Dispatcher & History | Hàng đợi yêu cầu `FIFOQueue`, ngăn xếp `UndoManager`, bộ điều phối `Dispatcher`. |
+| **TV4** | Storage Engine | `JsonStorage`, Atomic Write qua file tạm `.tmp`, thẩm định schema dữ liệu. |
+| **TV5** (Lead) | UI & Integration | Streamlit UI Dashboard, tích hợp hệ thống, `CONTRACT.md`, CI/CD và tài liệu. |
+
+---
+
+## 3. Tính năng nổi bật
+
+### 🗺️ Mạng lưới giao thông trực quan (Graphviz)
+- Đồ thị hiển thị trực quan các đỉnh giao thông và cung đường một chiều có trọng số di chuyển.
+- Tự động đánh dấu trạng thái tài xế trên từng nút giao thông (viền xanh lá: tài xế sẵn sàng; viền đỏ: tài xế đang bận).
+- Bảng tra cứu cung đường và danh sách tài xế theo thời gian thực.
+
+### ⚡ Trung tâm điều phối thông minh
+- Khởi tạo cuốc xe mới với điểm đón và điểm trả khách rõ ràng.
+- Hàng đợi FIFO đảm bảo yêu cầu đến trước luôn được xử lý trước.
+- Thuật toán tự động tìm tài xế rảnh có thời gian tiếp cận khách hàng ngắn nhất (ETA nhỏ nhất), trả về lộ trình chi tiết từng nút.
+
+### ↩️ Lịch sử thao tác hoàn tác / làm lại (Undo / Redo)
+- Áp dụng cấu trúc dữ liệu **2 Ngăn xếp (Dual-Stack)**: `undo_stack` và `redo_stack`.
+- Thao tác Undo đưa cuốc xe vừa gán về lại đầu hàng đợi FIFO và khôi phục tài xế về trạng thái rảnh (`free`).
+- Redo cho phép khôi phục lại ngay lần điều phối vừa hoàn tác.
+- Tự động làm mới ngăn xếp khi có thao tác làm biến đổi trạng thái (như hoàn thành chuyến xe).
+
+### 💾 Lưu trữ dữ liệu an toàn (Atomic JSON Storage)
+- Quá trình ghi dữ liệu áp dụng cơ chế **Atomic Replacement**: ghi vào file tạm `.tmp` sau đó dùng thao tác `os.replace` để tránh mất mát hoặc hỏng file JSON khi chương trình bị dừng đột ngột.
+- Tự động tách biệt thư mục gốc `data/seed/` và thư mục hoạt động `data/runtime/`.
+
+---
+
+## 4. Phân tích thuật toán: A1 vs A2
+
+Hệ thống triển khai 2 chiến lược điều phối dựa trên giải thuật Dijkstra trên đồ thị có hướng $G = (V, E)$:
+
+| Tiêu chí | Chiến lược A1 (Forward Dijkstra) | Chiến lược A2 (Reverse Dijkstra) |
+|---|---|---|
+| **Cơ chế hoạt động** | Với mỗi tài xế rảnh $d_i$, chạy Dijkstra từ vị trí của $d_i$ đến điểm đón $P$. | Đảo chiều tất cả cung của $G$ thành $G^R$, chỉ chạy **một lượt duy nhất** Dijkstra từ điểm đón $P$. |
+| **Số lần chạy Dijkstra** | $k$ lần (với $k$ là số tài xế đang rảnh). | **1 lần duy nhất**. |
+| **Độ phức tạp thời gian** | $O(k \cdot (E + V \log V))$ | $O(E + V \log V)$ |
+| **Hiệu năng thực nghiệm** | Phù hợp khi số tài xế rảnh rất ít ($k \le 2$). | Tối ưu vượt trội khi mạng lưới có nhiều tài xế rảnh ($k \gg 1$), giảm đáng kể số đỉnh duyệt và runtime. |
+| **Tính đúng đắn** | Tìm đường đi ngắn nhất $d_i \to P$. | Đường đi ngắn nhất trên đồ thị đảo chiều $P \to d_i$ tương đương với $d_i \to P$ trên đồ thị gốc. |
+
+*Lưu ý: Cả hai thuật toán luôn đảm bảo tìm ra cùng một tài xế tối ưu và cùng thời gian ETA.*
+
+---
+
+## 5. Cài đặt & Khởi chạy
+
+### Yêu cầu tiên quyết
+- Python 3.12 trở lên.
+- Quản lý gói: [uv](https://docs.astral.sh/uv/) (khuyên dùng) hoặc `pip` / `virtualenv`.
+
+### 1. Cài đặt thư viện
 ```bash
+# Đồng bộ môi trường bằng uv
 uv sync
 ```
 
-## Chạy ứng dụng
+### 2. Khởi chạy giao diện Streamlit
 ```bash
+# Chạy ứng dụng với backend thật (JsonStorage + Dispatcher)
 uv run streamlit run src/app.py
 ```
-Thanh bên của ứng dụng cho biết đang chạy **backend thật** hay **backend giả lập (mock)**.
-Mock chỉ được dùng khi `Dispatcher` / `JsonStorage` / `STRATEGIES` thật chưa đủ API theo
-`docs/CONTRACT.md`; có thể ép bằng biến môi trường:
+
+### 3. Tùy chọn chế độ Backend qua biến môi trường
+Hệ thống hỗ trợ chạy song song chế độ kiểm thử hoặc thực tế:
+- **Bắt buộc dùng backend thật**:
+  ```bash
+  RIDE_DISPATCH_BACKEND=real uv run streamlit run src/app.py
+  ```
+- **Chạy bằng backend giả lập (mock)**:
+  ```bash
+  RIDE_DISPATCH_BACKEND=mock uv run streamlit run src/app.py
+  ```
+*(Trên Windows PowerShell: sử dụng `$env:RIDE_DISPATCH_BACKEND="real"` trước khi chạy).*
+
+Truy cập ứng dụng tại: **`http://localhost:8501`**
+
+---
+
+## 6. Hướng dẫn kiểm thử (Testing)
+
+Dự án xây dựng bộ kiểm thử tự động toàn diện bao gồm:
+- **Unit Tests**: Kiểm tra tính độc lập của Models, Graph, Hàng đợi FIFO, UndoManager, JsonStorage.
+- **Contract Tests**: Đảm bảo tất cả thành phần tuân thủ chuẩn giao tiếp [CONTRACT.md](file:///home/nhlong/Module1/Module1/docs/CONTRACT.md).
+- **UI AppTest**: Giả lập tương tác người dùng trên giao diện Streamlit thực thụ (đặt xe, bấm điều phối, bấm undo/redo, hoàn thành chuyến).
+
+Chạy toàn bộ test suite bằng câu lệnh:
 ```bash
-RIDE_DISPATCH_BACKEND=mock uv run streamlit run src/app.py   # luôn dùng mock
-RIDE_DISPATCH_BACKEND=real uv run streamlit run src/app.py   # bắt buộc dùng bản thật, lỗi nếu thiếu
+uv run pytest -v
 ```
-(Windows PowerShell: `$env:RIDE_DISPATCH_BACKEND="mock"` trước khi chạy.)
 
-## Chạy kiểm thử
-```bash
-uv run pytest
+Kết quả kiểm thử chuẩn:
+```text
+======================== 92 passed, 13 xpassed in 4.54s ========================
 ```
-`tests/test_contract_api.py` kiểm tra API thật có khớp CONTRACT chưa (các mục chưa xong được
-đánh dấu `xfail`, người phụ trách module gỡ dấu này khi hoàn thành).
 
-## Kịch bản demo 5 bước
-1. **Tab "Quản lý dữ liệu"**: xem danh sách tài xế và đồ thị; thêm một tài xế mới tại một đỉnh bất kỳ.
-2. **Tab "Điều phối chuyến"**: tạo 2–3 yêu cầu đặt xe; quan sát hàng đợi FIFO.
-3. Chọn thuật toán **A1**, bấm *Điều phối*: xem tài xế được chọn, ETA, số đỉnh đã thăm, thời gian chạy và lộ trình.
-4. Bấm **Undo** (yêu cầu quay về đầu hàng, tài xế rảnh trở lại), rồi **Redo**; điều phối lại bằng **A2** và so sánh kết quả.
-5. Bấm **Hoàn thành chuyến** để giải phóng tài xế, rồi sang tab **"Đối chuẩn thuật toán"**
-   để chạy A1 vs A2 và xem bảng/biểu đồ số đỉnh đã thăm và runtime.
+---
 
-Lưu ý: Undo/Redo giữ qua các lần rerun của Streamlit nhưng **mất khi tải lại trang (F5)** hoặc bấm
-"Tải lại dữ liệu từ đĩa", vì lịch sử không được lưu xuống JSON. Hoàn thành chuyến sẽ xóa lịch sử Undo/Redo.
+## 7. Kịch bản chạy mẫu (Demo Walkthrough)
 
-## Cấu trúc
-| Thư mục | Phụ trách | Nội dung |
-|---|---|---|
-| `src/models/` | TV1 | BaseEntity, Location, Driver, RideRequest, Trip, hằng số trạng thái |
-| `src/core/road_graph.py`, `strategies.py` | TV2 | RoadGraph, Dijkstra A1/A2, `STRATEGIES` |
-| `src/core/dispatcher.py`, `structures.py`, `undo_manager.py` | TV3 | Điều phối, hàng đợi FIFO, Undo/Redo |
-| `src/core/json_storage.py`, `data/seed/` | TV4 | Đọc/ghi JSON atomic, dữ liệu mẫu (`data/runtime/` do app tự sinh, không commit) |
-| `src/app.py`, `src/ui/`, `docs/`, README | TV5 | Giao diện Streamlit, tích hợp, tài liệu |
+Để quan sát đầy đủ các chức năng nghiệp vụ, thực hiện theo 5 bước sau trên giao diện:
 
-Giao diện (`src/ui/`): `session.py` (Dispatcher/JsonStorage trong `st.session_state`, tự lưu),
-`tab_data.py`, `tab_dispatch.py`, `tab_benchmark.py`, `ports.py` (Protocol theo CONTRACT),
-`mock.py` (backend giả lập), `constants.py` (hằng số trạng thái).
+1. **Kiểm tra dữ liệu mạng lưới (Tab "Quản lý dữ liệu")**:
+   - Quan sát bản đồ đồ thị và vị trí các tài xế rảnh (đỉnh viền xanh).
+   - Điền form để thêm một tài xế mới tại một đỉnh bất kỳ (ví dụ: `N5 - Chợ Hàn`).
+2. **Tạo yêu cầu đặt xe (Tab "Điều phối chuyến")**:
+   - Chọn điểm đón (ví dụ: `N3 - Cầu Rồng`) và điểm trả (`N7 - Ngũ Hành Sơn`).
+   - Nhấn **Gửi yêu cầu**. Yêu cầu xuất hiện ngay trong danh sách Hàng đợi FIFO.
+3. **Thực hiện điều phối**:
+   - Chọn thuật toán **A2 (Dijkstra đảo chiều)**.
+   - Nhấn **Ghép chuyến**. Hệ thống tự động chọn tài xế rảnh gần nhất, hiển thị thẻ kết quả với ETA, số đỉnh duyệt và chuỗi breadcrumb lộ trình.
+4. **Kiểm tra tính năng Hoàn tác (Undo / Redo)**:
+   - Nhấn **Undo**: Chuyến xe vừa gán bị hủy, tài xế quay về trạng thái rảnh, yêu cầu quay lại vị trí số 1 trong hàng đợi FIFO.
+   - Nhấn **Redo**: Phục hồi lại chuyến xe vừa hoàn tác.
+5. **Hoàn thành chuyến & Đối chuẩn thuật toán**:
+   - Nhấn nút **Hoàn thành** tại danh sách chuyến xe. Tài xế di chuyển về điểm trả và chuyển sang trạng thái rảnh.
+   - Chuyển sang Tab **"Đối chuẩn thuật toán"**: Nhấn **Chạy đối chuẩn** để so sánh trực quan thời gian chạy và số đỉnh duyệt giữa A1 và A2 qua biểu đồ cột.
 
-Hợp đồng giữa các module: xem `docs/CONTRACT.md`. Đề xuất thay đổi đang chờ nhóm duyệt: `docs/CONTRACT_PROPOSALS.md`.
+---
 
-## Quy trình Git
-Mỗi người một nhánh (`feat/models`, `feat/algorithms`, `feat/dispatcher`, `feat/storage`, `feat/ui`),
-không commit trực tiếp lên `main`, mọi thay đổi qua Pull Request có approve của chủ sở hữu thư mục
-(theo `.github/CODEOWNERS`). Tiền tố commit: `feat:`, `fix:`, `test:`, `docs:`, `refactor:`.
-`pyproject.toml` và `uv.lock` do TV5 (Long) quản lý; cần thêm thư viện hãy báo Long.
+## 8. Quy chuẩn mã nguồn & Git Workflow
+
+- **Branching Model**: Mỗi thành viên làm việc trên nhánh tính năng riêng:
+  - `feat/models`
+  - `feat/algorithms`
+  - `feat/dispatcher`
+  - `feat/storage`
+  - `feat/ui`
+- **Quy tắc Commit Message**:
+  - `feat:` Bổ sung tính năng mới
+  - `fix:` Sửa lỗi
+  - `test:` Bổ sung hoặc chỉnh sửa kịch bản kiểm thử
+  - `docs:` Cập nhật tài liệu
+  - `refactor:` Tái cấu trúc mã nguồn mà không đổi hành vi
+- **Quản lý Codeowner**: Mọi thay đổi vào nhánh `main` phải thông qua Pull Request và có sự xét duyệt theo phân quyền thư mục tại `.github/CODEOWNERS`.

@@ -16,10 +16,7 @@ from src.models.location import Location
 from src.models.ride_request import RideRequest
 from src.models.trip import Trip
 
-#Tạm thời cho đến khi các trạng thái này được set trong thư viện chính
-ASSIGNED = 'assigned'
-QUEUED = 'QUEUED'
-COMPLETED = 'COMPLETED'
+from src.models import ASSIGNED, COMPLETED, QUEUED
 
 def _write_json(path: Path, data: dict | list) -> None:
     """Hàm phụ trợ ghi nhanh dữ liệu JSON vào file trong thư mục tạm."""
