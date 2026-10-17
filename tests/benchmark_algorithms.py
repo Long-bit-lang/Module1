@@ -103,7 +103,7 @@ def print_document_section() -> None:
     graph, pickup, drivers = build_document_case()
     strategies = [
         ("A1 - Dijkstra từng tài xế", DijkstraPerDriver()),
-        ("A2 - Dijkstra trên đồ thị đảo chiều", ReverseDijkstra()),
+        ("A2 - Dijkstra đảo chiều", ReverseDijkstra()),
     ]
 
     print("## Benchmark ca tài liệu (200 đỉnh, 25 tài xế)")
@@ -130,6 +130,9 @@ def print_document_section() -> None:
             and rep.eta == DOC_EXPECTED["eta"]
             and rep.visited_count == expected_visited
         )
+
+    print()
+    print(f"- Khớp kỳ vọng tài liệu: {'Có' if all_match else 'Không khớp'}")
 
 
 

@@ -78,6 +78,8 @@ def _on_redo() -> None:
 def _on_complete(trip_id: str) -> None:
     ok, done = S.perform(lambda: S.dispatcher().complete_trip(trip_id))
     if ok:
+        if done:
+            st.session_state[S.K_LAST] = None
         S.flash(
             "success" if done else "warning",
             f"Chuyến {trip_id} đã hoàn thành; tài xế được giải phóng tại điểm trả khách."

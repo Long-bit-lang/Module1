@@ -2,6 +2,6 @@
   "drivers": [
     {"id": "D1", "name": "Nguyễn Văn An", "node": "N3", "status": "free"},
     {"id": "D2", "name": "Trần Văn Bình", "node": "N2", "status": "free"},
-    {"id": "D3", "name": "Lê Hoàng Cường", "node": "N2", "status": "busy"}
+    {"id": "D3", "name": "Lê Hoàng Cường", "node": "N6", "status": "busy"}
   ]
 }

@@ -94,7 +94,7 @@ class Dispatcher:
             if driver.status == BUSY and node != driver.node:
                 raise ValueError(f"Tài xế {driver_id} đang bận, không thể đổi vị trí")
         if name is not None:
-            driver.name = name
+            driver.name = name.strip()
         if node is not None:
             driver.node = node
         return driver

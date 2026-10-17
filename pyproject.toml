@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "He thong Quan ly va Dieu phoi Dat xe Thong minh tren Do thi Giao thong"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["streamlit>=1.35"]
+dependencies = [
+    "streamlit>=1.63",
+    "pandas>=2",
+]
 
 [dependency-groups]
 dev = ["pytest>=8"]

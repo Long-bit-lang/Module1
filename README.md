@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Framework](https://img.shields.io/badge/Streamlit-1.63%2B-FF4B4B.svg)](https://streamlit.io/)
 [![Package Manager](https://img.shields.io/badge/uv-Astral-purple.svg)](https://docs.astral.sh/uv/)
-[![Tests](https://img.shields.io/badge/pytest-105%20passed-brightgreen.svg)](https://pytest.org/)
+[![Tests](https://img.shields.io/badge/pytest-118%20passed-brightgreen.svg)](https://pytest.org/)
 
 ---
 
@@ -27,13 +27,13 @@ Trong hệ thống vận tải hành khách đô thị thông minh, việc tìm 
 1. **Khách hàng**: Thời gian đón (ETA - Estimated Time of Arrival) phải là ngắn nhất có thể.
 2. **Hệ thống**: Tính công bằng (FIFO - khách đặt trước được xử lý trước) và thuật toán có hiệu năng thực thi cao trên đồ thị mạng lưới đường xá có hướng và trọng số thời gian di chuyển (phút).
 
-Dự án hiện thực hóa trọn vẹn luồng nghiệp vụ trên đồ thị giao thông thực tế (thành phố Đà Nẵng: Cầu Rồng, Chợ Hàn, Bán đảo Sơn Trà, Sân bay, v.v.), tích hợp giao diện tương tác trực quan thời gian thực.
+Dự án hiện thực hóa trọn vẹn luồng nghiệp vụ trên đồ thị giao thông thực tế (thành phố Đà Nẵng: Cầu Rồng, Chợ Hàn, Bến xe Trung tâm, Ga Đà Nẵng, Sân bay Quốc tế, v.v.), tích hợp giao diện tương tác trực quan thời gian thực.
 
 ---
 
 ## 2. Kiến trúc hệ thống & Phân công nhiệm vụ
 
-Hệ thống được thiết kế theo kiến trúc phân tầng (Layered Architecture) với tính tách biệt rõ ràng giữa các module nghiệp vụ, tuân theo bản hợp đồng giao tiếp chuẩn [CONTRACT.md](file:///home/nhlong/Module1/Module1/docs/CONTRACT.md):
+Hệ thống được thiết kế theo kiến trúc phân tầng (Layered Architecture) với tính tách biệt rõ ràng giữa các module nghiệp vụ, tuân theo bản hợp đồng giao tiếp chuẩn [CONTRACT.md](docs/CONTRACT.md):
 
 ```
 Module1/
@@ -42,7 +42,7 @@ Module1/
 │   ├── core/
 │   │   ├── road_graph.py  # [TV2] Đồ thị giao thông có hướng trọng số
 │   │   ├── strategies.py  # [TV2] Chiến lược ghép cuốc A1 & A2 (Dijkstra)
-│   │   ├── structures.py  # [TV3] Cấu trúc dữ liệu: Queue (FIFO) & Stack
+│   │   ├── structures.py  # [TV3] Cấu trúc dữ liệu: RequestQueue (FIFO) & Stack
 │   │   ├── undo_manager.py# [TV3] Quản lý lịch sử Undo / Redo
 │   │   ├── dispatcher.py  # [TV3] Bộ điều phối nghiệp vụ tập trung
 │   │   └── json_storage.py# [TV4] Lưu trữ đọc/ghi JSON nguyên tử (Atomic)
@@ -51,13 +51,17 @@ Module1/
 │   │   ├── tab_data.py    # Tab 1: Quản lý dữ liệu mạng lưới & Tài xế
 │   │   ├── tab_dispatch.py# Tab 2: Điều phối cuốc xe & Undo/Redo
 │   │   ├── tab_benchmark.py# Tab 3: Đối chuẩn hiệu năng giải thuật
+│   │   ├── graph_view.py  # Bản đồ Graphviz với lộ trình trực quan
+│   │   ├── constants.py   # Hằng số trạng thái dùng chung
+│   │   ├── ports.py       # Protocol giao tiếp chuẩn UI-Backend
+│   │   ├── mock.py        # Backend giả lập dự phòng
 │   │   └── styles.py      # Tùy biến giao diện CSS Inter
 │   └── app.py             # [TV5] Entrypoint ứng dụng Streamlit
 ├── data/
-│   ├── seed/              # Dữ liệu gốc chuẩn (graph, locations, drivers, requests)
+│   ├── seed/              # Dữ liệu gốc chuẩn (graph, drivers, requests, trips)
 │   └── runtime/           # Dữ liệu runtime tự động lưu trữ nguyên tử
 ├── docs/                  # Tài liệu phân tích, hợp đồng giao tiếp & benchmark
-└── tests/                 # Bộ kịch bản kiểm thử tự động (Unit, Contract, UI AppTest)
+└── tests/                 # Bộ kịch bản kiểm thử tự động (Unit, Contract, UI AppTest, Integration)
 ```
 
 ### Bảng phân công thành viên
@@ -65,7 +69,7 @@ Module1/
 |---|---|---|
 | **TV1** | Data Models | `BaseEntity`, `Location`, `Driver`, `RideRequest`, `Trip`, enum trạng thái. |
 | **TV2** | Graph & Algorithms | `RoadGraph`, Giải thuật Dijkstra Forward (A1) & Reverse (A2), ma trận trọng số. |
-| **TV3** | Dispatcher & History | Hàng đợi yêu cầu `FIFOQueue`, ngăn xếp `UndoManager`, bộ điều phối `Dispatcher`. |
+| **TV3** | Dispatcher & History | Hàng đợi yêu cầu `RequestQueue`, ngăn xếp `UndoManager`, bộ điều phối `Dispatcher`. |
 | **TV4** | Storage Engine | `JsonStorage`, Atomic Write qua file tạm `.tmp`, thẩm định schema dữ liệu. |
 | **TV5** (Lead) | UI & Integration | Streamlit UI Dashboard, tích hợp hệ thống, `CONTRACT.md`, CI/CD và tài liệu. |
 
@@ -75,13 +79,14 @@ Module1/
 
 ### 🗺️ Mạng lưới giao thông trực quan (Graphviz)
 - Đồ thị hiển thị trực quan các đỉnh giao thông và cung đường một chiều có trọng số di chuyển.
-- Tự động đánh dấu trạng thái tài xế trên từng nút giao thông (viền xanh lá: tài xế sẵn sàng; viền đỏ: tài xế đang bận).
+- Tự động đánh dấu trạng thái tài xế trên từng nút giao thông (viền xanh lá: tài xế sẵn sàng; viền đỏ: tài xế đang bận; viền cam: điểm đón đang chờ).
 - Bảng tra cứu cung đường và danh sách tài xế theo thời gian thực.
 
 ### ⚡ Trung tâm điều phối thông minh
-- Khởi tạo cuốc xe mới với điểm đón và điểm trả khách rõ ràng.
+- Khởi tạo cuốc xe mới với điểm đón và điểm trả khách rõ ràng, tự động xác thực tính liên thông của tuyến đường.
 - Hàng đợi FIFO đảm bảo yêu cầu đến trước luôn được xử lý trước.
 - Thuật toán tự động tìm tài xế rảnh có thời gian tiếp cận khách hàng ngắn nhất (ETA nhỏ nhất), trả về lộ trình chi tiết từng nút.
+- Hỗ trợ ghép từng yêu cầu hoặc "Ghép tất cả" toàn bộ hàng đợi khả thi.
 
 ### ↩️ Lịch sử thao tác hoàn tác / làm lại (Undo / Redo)
 - Áp dụng cấu trúc dữ liệu **2 Ngăn xếp (Dual-Stack)**: `undo_stack` và `redo_stack`.
@@ -149,8 +154,9 @@ Truy cập ứng dụng tại: **`http://localhost:8501`**
 
 Dự án xây dựng bộ kiểm thử tự động toàn diện bao gồm:
 - **Unit Tests**: Kiểm tra tính độc lập của Models, Graph, Hàng đợi FIFO, UndoManager, JsonStorage.
-- **Contract Tests**: Đảm bảo tất cả thành phần tuân thủ chuẩn giao tiếp [CONTRACT.md](file:///home/nhlong/Module1/Module1/docs/CONTRACT.md).
+- **Contract Tests**: Đảm bảo tất cả thành phần tuân thủ chuẩn giao tiếp [CONTRACT.md](docs/CONTRACT.md).
 - **UI AppTest**: Giả lập tương tác người dùng trên giao diện Streamlit thực thụ (đặt xe, bấm điều phối, bấm undo/redo, hoàn thành chuyến).
+- **Integration Tests**: Kiểm thử luồng tích hợp đầu-cuối từ lưu trữ đĩa, nạp dữ liệu đến điều phối và hoàn tác.
 
 Chạy toàn bộ test suite bằng câu lệnh:
 ```bash
@@ -159,7 +165,7 @@ uv run pytest -v
 
 Kết quả kiểm thử chuẩn:
 ```text
-======================== 92 passed, 13 xpassed in 4.54s ========================
+============================= 118 passed in 4.62s ==============================
 ```
 
 ---
@@ -170,19 +176,19 @@ Kết quả kiểm thử chuẩn:
 
 1. **Kiểm tra dữ liệu mạng lưới (Tab "Quản lý dữ liệu")**:
    - Quan sát bản đồ đồ thị và vị trí các tài xế rảnh (đỉnh viền xanh).
-   - Điền form để thêm một tài xế mới tại một đỉnh bất kỳ (ví dụ: `N5 - Chợ Hàn`).
+   - Điền form để thêm một tài xế mới tại một đỉnh bất kỳ (ví dụ: `N2 - Bến xe Trung tâm`).
 2. **Tạo yêu cầu đặt xe (Tab "Điều phối chuyến")**:
-   - Chọn điểm đón (ví dụ: `N3 - Cầu Rồng`) và điểm trả (`N7 - Ngũ Hành Sơn`).
+   - Chọn điểm đón (`N3 - Cầu Rồng`) và điểm trả (`N6 - Chợ Hàn`).
    - Nhấn **Gửi yêu cầu**. Yêu cầu xuất hiện ngay trong danh sách Hàng đợi FIFO.
 3. **Thực hiện điều phối**:
    - Chọn thuật toán **A2 (Dijkstra đảo chiều)**.
-   - Nhấn **Ghép chuyến**. Hệ thống tự động chọn tài xế rảnh gần nhất, hiển thị thẻ kết quả với ETA, số đỉnh duyệt và chuỗi breadcrumb lộ trình.
+   - Nhấn **Ghép chuyến** (hoặc **Ghép tất cả**). Hệ thống tự động chọn tài xế rảnh gần nhất, hiển thị thẻ kết quả với ETA, số đỉnh duyệt và chuỗi breadcrumb lộ trình.
 4. **Kiểm tra tính năng Hoàn tác (Undo / Redo)**:
    - Nhấn **Undo**: Chuyến xe vừa gán bị hủy, tài xế quay về trạng thái rảnh, yêu cầu quay lại vị trí số 1 trong hàng đợi FIFO.
    - Nhấn **Redo**: Phục hồi lại chuyến xe vừa hoàn tác.
 5. **Hoàn thành chuyến & Đối chuẩn thuật toán**:
    - Nhấn nút **Hoàn thành** tại danh sách chuyến xe. Tài xế di chuyển về điểm trả và chuyển sang trạng thái rảnh.
-   - Chuyển sang Tab **"Đối chuẩn thuật toán"**: Nhấn **Chạy đối chuẩn** để so sánh trực quan thời gian chạy và số đỉnh duyệt giữa A1 và A2 qua biểu đồ cột.
+   - Chuyển sang Tab **"Đối chuẩn thuật toán"**: Nhấn **Chạy đối chuẩn** để so sánh trực quan thời gian chạy và số đỉnh duyệt giữa A1 và A2 qua biểu đồ cột; hoặc mở mục **Thử nghiệm mở rộng quy mô** để quan sát ưu thế vượt trội của A2 khi số tài xế tăng lên 100.
 
 ---
 

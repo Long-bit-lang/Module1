@@ -18,8 +18,8 @@
 
 | Chiến lược | driver_id | ETA (phút) | visited_count | Thời gian trung vị (ms) |
 |---|---:|---:|---:|---:|
-| A1 - Dijkstra từng tài xế | D23 | 15.0 | 3.974 | 3.9163 |
-| A2 - Dijkstra trên đồ thị đảo chiều | D23 | 15.0 | 27 | 0.3486 |
+| A1 - Dijkstra từng tài xế | D23 | 15.0 | 3974 | 3.9163 |
+| A2 - Dijkstra đảo chiều | D23 | 15.0 | 27 | 0.3486 |
 
 ## Nhận xét
 

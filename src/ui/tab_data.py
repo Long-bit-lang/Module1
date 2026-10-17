@@ -36,7 +36,7 @@ def _on_add_driver() -> None:
 def _on_update_driver() -> None:
     did = S.item_id(st.session_state["edit_driver"])
     name_val = st.session_state.get(f"edit_name_{did}", "").strip()
-    S.perform(
+    ok, _ = S.perform(
         lambda: S.dispatcher().update_driver(
             did,
             name=name_val or None,
@@ -44,20 +44,25 @@ def _on_update_driver() -> None:
         ),
         f"Đã cập nhật thông tin tài xế {did}",
     )
+    if ok:
+        st.session_state[S.K_LAST] = None
 
 
 def _on_remove_driver() -> None:
     did = S.item_id(st.session_state["edit_driver"])
     ok, removed = S.perform(lambda: S.dispatcher().remove_driver(did))
     if ok and removed:
+        st.session_state[S.K_LAST] = None
         S.flash("success", f"Đã xóa tài xế {did}")
     elif ok:
         S.flash("warning", f"Không tìm thấy tài xế {did}")
 
 
 def _on_reload() -> None:
-    S.reload_from_disk()
-    S.flash("info", "Đã nạp lại dữ liệu từ đĩa; lịch sử Undo/Redo đã được đặt lại.")
+    ok, _ = S.perform(S.reload_from_disk)
+    if ok:
+        st.session_state[S.K_LAST] = None
+        S.flash("info", "Đã nạp lại dữ liệu từ đĩa; lịch sử Undo/Redo đã được đặt lại.")
 
 
 def render() -> None:
@@ -152,7 +157,7 @@ def render() -> None:
 
     st.divider()
     st.button(
-        "Tải lại dữ liệu gốc từ file",
+        "Tải lại dữ liệu từ đĩa",
         on_click=_on_reload,
         key="btn_reload",
         help="Khôi phục trạng thái ban đầu từ file JSON. Lịch sử Undo/Redo sẽ được làm mới.",

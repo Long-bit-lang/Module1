@@ -87,6 +87,13 @@ def test_benchmark_tab_runs_and_strategies_agree(app):
     assert any("cùng tài xế và ETA" in s.value for s in app.success)
 
 
+def test_benchmark_document_case_runs_and_shows_speedup(app):
+    app.button(key="btn_run_doc_bench").click().run()
+    assert not app.exception
+    assert any("Giảm số đỉnh duyệt" in s.value for s in app.success)
+
+
+
 @pytest.fixture
 def real_app(monkeypatch, tmp_path):
     monkeypatch.setenv("RIDE_DISPATCH_BACKEND", "real")
@@ -100,3 +107,18 @@ def test_real_backend_dispatch_persists_and_tiebreaks(real_app, tmp_path):
     trip = _d(real_app).trips_snapshot()[-1]
     assert (trip.driver_id, trip.eta) == ("D1", 6.0)  # hòa ETA thì chọn ID nhỏ nhất
     assert '"T3"' in (tmp_path / "trips.json").read_text(encoding="utf-8")
+
+
+def test_tab_selection_persists_on_widget_interaction(app):
+    # Người dùng chọn tab "Điều phối chuyến"
+    app.session_state["active_tab"] = "Điều phối chuyến"
+    app.run()
+    assert app.session_state["active_tab"] == "Điều phối chuyến"
+
+    # Người dùng đổi điểm trả khách (selectbox trong tab Điều phối chuyến)
+    _pick(app, "req_dropoff", "N4")
+    app.run()
+
+    # Tab đang chọn vẫn là "Điều phối chuyến", không bị reload về "Quản lý dữ liệu"
+    assert app.session_state["active_tab"] == "Điều phối chuyến"
+

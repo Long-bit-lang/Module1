@@ -13,8 +13,23 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+import os
+import shutil
+from pathlib import Path
+
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-session.init_session()
+
+try:
+    session.init_session()
+except Exception as exc:
+    st.error(f"Lỗi khởi tạo dữ liệu: {exc}")
+    runtime_env = os.environ.get("RIDE_DISPATCH_RUNTIME_DIR")
+    runtime_dir = Path(runtime_env) if runtime_env else Path(__file__).resolve().parent.parent / "data" / "runtime"
+    if st.button("Xóa runtime và nạp lại từ seed"):
+        if runtime_dir.exists():
+            shutil.rmtree(runtime_dir)
+        st.rerun()
+    st.stop()
 
 # ── Tiêu đề ──────────────────────────────────────────────────────────────────
 st.title("🚕 Hệ thống Điều phối Đặt xe Thông minh")
@@ -54,8 +69,21 @@ with st.sidebar:
 session.render_flash()
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
+TAB_NAMES = ["Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán"]
+
+
+def _on_tab_change() -> None:
+    st.session_state["active_tab"] = st.session_state["main_tabs"]
+
+
+if "active_tab" not in st.session_state:
+    st.session_state["active_tab"] = TAB_NAMES[0]
+
 t_data, t_dispatch, t_bench = st.tabs(
-    ["Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán"]
+    TAB_NAMES,
+    default=st.session_state["active_tab"],
+    key="main_tabs",
+    on_change=_on_tab_change,
 )
 with t_data:
     tab_data.render()
@@ -63,3 +91,4 @@ with t_dispatch:
     tab_dispatch.render()
 with t_bench:
     tab_benchmark.render()
+
