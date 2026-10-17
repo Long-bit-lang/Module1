@@ -1,38 +1,82 @@
-"""TV3 - Cấu trúc dữ liệu tự cài: Queue (FIFO) và Stack."""
+"""Queue (FIFO) and Stack (LIFO) implemented with linked nodes."""
 from __future__ import annotations
-from collections import deque
-from typing import Any
+
+from dataclasses import dataclass
+from typing import Any, Iterator
+
+from models.ride_request import RideRequest
+
+
+@dataclass
+class _Node:
+    value: Any
+    next: _Node | None = None
 
 
 class RequestQueue:
-    def __init__(self):
-        self._items: deque[Any] = deque()
+    def __init__(self) -> None:
+        self._head: _Node | None = None
+        self._tail: _Node | None = None
+        self._size = 0
 
-    def enqueue(self, item: Any) -> None:
-        raise NotImplementedError  # TODO(TV3)
+    def enqueue(self, request: RideRequest) -> None:
+        node = _Node(request)
+        if self._tail is None:
+            self._head = node
+        else:
+            self._tail.next = node
+        self._tail = node
+        self._size += 1
 
-    def dequeue(self) -> Any:
-        raise NotImplementedError  # TODO(TV3)
+    def dequeue(self) -> RideRequest:
+        if self._head is None:
+            raise IndexError("Khong the dequeue hang doi rong")
+        request = self._head.value
+        self._head = self._head.next
+        if self._head is None:
+            self._tail = None
+        self._size -= 1
+        return request
 
-    def peek(self) -> Any:
-        raise NotImplementedError  # TODO(TV3)
+    def peek(self) -> RideRequest | None:
+        return None if self._head is None else self._head.value
+
+    def requeue_head(self, request: RideRequest) -> None:
+        self._head = _Node(request, self._head)
+        if self._tail is None:
+            self._tail = self._head
+        self._size += 1
 
     def __len__(self) -> int:
-        return len(self._items)
+        return self._size
+
+    def __iter__(self) -> Iterator[RideRequest]:
+        node = self._head
+        while node is not None:
+            yield node.value
+            node = node.next
 
 
 class Stack:
-    def __init__(self):
-        self._items: list[Any] = []
+    def __init__(self) -> None:
+        self._top: _Node | None = None
+        self._size = 0
 
     def push(self, item: Any) -> None:
-        raise NotImplementedError  # TODO(TV3)
+        self._top = _Node(item, self._top)
+        self._size += 1
 
     def pop(self) -> Any:
-        raise NotImplementedError  # TODO(TV3)
+        if self._top is None:
+            raise IndexError("Khong the pop ngan xep rong")
+        item = self._top.value
+        self._top = self._top.next
+        self._size -= 1
+        return item
 
     def clear(self) -> None:
-        self._items.clear()
+        self._top = None
+        self._size = 0
 
     def __len__(self) -> int:
-        return len(self._items)
+        return self._size

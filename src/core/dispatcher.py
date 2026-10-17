@@ -1,32 +1,269 @@
-"""TV3 - Đầu mối nghiệp vụ: hàng đợi, gọi chiến lược, tạo Trip, Undo/Redo.
-Không đọc/ghi file trực tiếp (việc đó thuộc JsonStorage)."""
+"""Business coordinator: requests, drivers, trips and dispatch undo/redo.
+
+No file I/O here: JsonStorage and the UI are responsible for persistence.
+The public method signatures follow docs/CONTRACT.md.
+"""
 from __future__ import annotations
 
-from models.trip import Trip
+from copy import deepcopy
+from math import isfinite
+
+from models import ASSIGNED, BUSY, COMPLETED, FREE, QUEUED
+from models.driver import Driver
+from models.location import Location
 from models.ride_request import RideRequest
+from models.trip import Trip
 from .road_graph import RoadGraph
-from .strategies import MatchStrategy
+from .strategies import MatchResult, MatchStrategy
 from .structures import RequestQueue
-from .undo_manager import UndoManager
+from .undo_manager import DispatchAction, UndoManager
+
+
+def _next_number(prefix: str, ids) -> int:
+    """Find the next unused sequential number after existing IDs."""
+    values = [
+        int(value[len(prefix):])
+        for value in ids
+        if isinstance(value, str)
+        and value.startswith(prefix)
+        and value[len(prefix):].isdigit()
+    ]
+    return max(values, default=0) + 1
 
 
 class Dispatcher:
-    def __init__(self, graph: RoadGraph, drivers: dict, trips: list | None = None):
+    def __init__(
+        self,
+        graph: RoadGraph,
+        drivers: dict[str, Driver],
+        trips: list[Trip] | None = None,
+        all_requests: dict[str, RideRequest] | None = None,
+    ) -> None:
         self.graph = graph
-        self.drivers = drivers          # {driver_id: Driver}
-        self.trips = trips or []
+        self.drivers = dict(drivers)
+        self.trips = list(trips) if trips is not None else []
+        self.all_requests = dict(all_requests) if all_requests is not None else {}
+        self.locations: dict[str, Location] = {}
+
         self.queue = RequestQueue()
+        for request in self.all_requests.values():
+            if request.status == QUEUED:
+                self.queue.enqueue(request)
         self.undo_manager = UndoManager()
 
-    def submit_request(self, request: RideRequest) -> None:
-        raise NotImplementedError  # TODO(TV3)
+        # Optional information for UI; no change to CONTRACT signatures.
+        self.last_match_result: MatchResult | None = None
+        self._next_driver_id = _next_number('D', self.drivers)
+        self._next_request_id = _next_number('R', self.all_requests)
+        self._next_trip_id = _next_number('T', (trip.id for trip in self.trips))
+
+    def _check_node(self, node: str) -> None:
+        if not self.graph.has_node(node):
+            raise ValueError(f"Dinh {node!r} khong ton tai tren do thi")
+
+    def submit_request(self, pickup_node: str, dropoff_node: str) -> RideRequest:
+        self._check_node(pickup_node)
+        self._check_node(dropoff_node)
+        request = RideRequest(f'R{self._next_request_id}', pickup_node, dropoff_node)
+        self.all_requests[request.id] = request
+        self.queue.enqueue(request)
+        self._next_request_id += 1
+        return request
+
+    def add_driver(self, name: str, node: str) -> Driver:
+        self._check_node(node)
+        driver = Driver(f'D{self._next_driver_id}', name, node)
+        self.drivers[driver.id] = driver
+        self._next_driver_id += 1
+        return driver
+
+    def update_driver(
+        self,
+        driver_id: str,
+        name: str | None = None,
+        node: str | None = None,
+    ) -> Driver:
+        driver = self.drivers[driver_id]
+        if node is not None:
+            self._check_node(node)
+        if name is not None and (not isinstance(name, str) or not name.strip()):
+            raise ValueError('Ten tai xe khong duoc de trong')
+        if name is not None:
+            driver.name = name
+        if node is not None:
+            driver.node = node
+        return driver
+
+    def remove_driver(self, driver_id: str) -> bool:
+        driver = self.drivers.get(driver_id)
+        if driver is None:
+            return False
+        if driver.status == BUSY:
+            raise ValueError(f'Tai xe {driver_id} dang ban')
+        # Historical Trips would keep dangling driver IDs after deletion.
+        # Discuss this extra guard with Long/Thang before final integration.
+        if any(trip.driver_id == driver_id for trip in self.trips):
+            raise ValueError(f'Tai xe {driver_id} dang duoc tham chieu boi lich su chuyen')
+        if any(
+            a.driver_id == driver_id
+            for a in self._history_actions()
+        ):
+            raise ValueError(f'Tai xe {driver_id} con lich su Undo/Redo')
+        del self.drivers[driver_id]
+        return True
+
+    def _history_actions(self):
+        """Read stack contents without modifying them (used for safe deletion)."""
+        for stack in (self.undo_manager.undo_stack, self.undo_manager.redo_stack):
+            items = []
+            while len(stack):
+                items.append(stack.pop())
+            for item in reversed(items):
+                stack.push(item)
+            yield from items
 
     def dispatch_next(self, strategy: MatchStrategy) -> Trip | None:
-        """None nếu không có tài xế / không có đường đi; yêu cầu không bị mất."""
-        raise NotImplementedError  # TODO(TV3)
+        request = self.queue.peek()
+        if request is None:
+            return None
+        free_drivers = {
+            driver_id: driver.node
+            for driver_id, driver in self.drivers.items()
+            if driver.status == FREE
+        }
+        if not free_drivers:
+            return None
+        result = strategy.find_driver(self.graph, request.pickup_node, free_drivers)
+        self.last_match_result = result
+        if result.driver_id is None or result.eta is None:
+            return None
+        if result.driver_id not in free_drivers:
+            raise ValueError('Chien luoc tra ve tai xe khong ranh / khong ton tai')
+        if isinstance(result.eta, bool) or not isfinite(result.eta) or result.eta < 0:
+            raise ValueError('Chien luoc tra ve ETA khong hop le')
+
+        driver = self.drivers[result.driver_id]
+        trip = Trip(f'T{self._next_trip_id}', request.id, driver.id, result.eta)
+        old_node = driver.node
+        # Prepare the whole transaction before changing the queue.
+        driver.assign()
+        removed_request = self.queue.dequeue()
+        assert removed_request is request
+        request.status = ASSIGNED
+        self.trips.append(trip)
+        self.undo_manager.record(
+            DispatchAction(
+                trip=trip,
+                driver_id=driver.id,
+                request=request,
+                previous_driver_node=old_node,
+            )
+        )
+        self._next_trip_id += 1
+        return trip
+
+    def complete_trip(self, trip_id: str) -> bool:
+        trip = next((trip for trip in self.trips if trip.id == trip_id), None)
+        if trip is None or trip.status == COMPLETED:
+            return False
+        driver = self.drivers[trip.driver_id]
+        request = self.all_requests[trip.request_id]
+        driver.node = request.dropoff_node
+        driver.release()
+        trip.status = COMPLETED
+        return True
+
+    def _peek_action(self, stack) -> DispatchAction | None:
+        if len(stack) == 0:
+            return None
+        action = stack.pop()
+        stack.push(action)
+        return action
+
+    def can_undo(self) -> bool:
+        action = self._peek_action(self.undo_manager.undo_stack)
+        # A completed trip cannot be 'uncompleted' by dispatch-only undo.
+        return action is not None and action.trip.status != COMPLETED
+
+    def can_redo(self) -> bool:
+        action = self._peek_action(self.undo_manager.redo_stack)
+        if action is None:
+            return False
+        driver = self.drivers.get(action.driver_id)
+        head = self.queue.peek()
+        return (
+            driver is not None
+            and driver.status == FREE
+            and head is not None
+            and head.id == action.request.id
+            and action.request.status == QUEUED
+            and not any(trip.id == action.trip.id for trip in self.trips)
+        )
 
     def undo(self) -> bool:
-        raise NotImplementedError  # TODO(TV3)
+        if not self.can_undo():
+            return False
+        action = self.undo_manager.undo()
+        assert action is not None
+        self.trips = [trip for trip in self.trips if trip.id != action.trip.id]
+        driver = self.drivers[action.driver_id]
+        driver.release()
+        if action.previous_driver_node is not None:
+            driver.node = action.previous_driver_node
+        action.request.status = QUEUED
+        self.queue.requeue_head(action.request)
+        return True
 
     def redo(self) -> bool:
-        raise NotImplementedError  # TODO(TV3)
+        if not self.can_redo():
+            return False
+        action = self.undo_manager.redo()
+        assert action is not None
+        request = self.queue.dequeue()
+        assert request.id == action.request.id
+        self.drivers[action.driver_id].assign()
+        action.request.status = ASSIGNED
+        self.trips.append(action.trip)
+        return True
+
+    def queue_snapshot(self) -> list[RideRequest]:
+        return deepcopy(list(self.queue))
+
+    def trips_snapshot(self) -> list[Trip]:
+        return deepcopy(self.trips)
+
+    def drivers_snapshot(self) -> dict[str, Driver]:
+        return deepcopy(self.drivers)
+
+    @classmethod
+    def from_state(cls, state: dict) -> 'Dispatcher':
+        # JsonStorage.load_all returns domain objects, not raw JSON strings.
+        requests = state.get('requests', [])
+        all_requests = {request.id: request for request in requests}
+        if len(all_requests) != len(requests):
+            raise ValueError('Trung ID yeu cau trong state')
+        dispatcher = cls(
+            graph=state['graph'],
+            drivers=state['drivers'],
+            trips=state.get('trips', []),
+            all_requests=all_requests,
+        )
+        dispatcher.locations = dict(state.get('locations', {}))
+        return dispatcher
+
+    def export_state(self) -> dict:
+        # Put queued requests first in CURRENT FIFO order so load_all/from_state
+        # reconstructs the same queue (including requeue_head after Undo).
+        queued = list(self.queue)
+        queued_ids = {request.id for request in queued}
+        other_requests = [
+            request for request in self.all_requests.values()
+            if request.id not in queued_ids
+        ]
+        return {
+            'graph': self.graph,
+            'drivers': self.drivers,
+            'requests': queued + other_requests,
+            'trips': list(self.trips),
+            'locations': self.locations,
+        }
