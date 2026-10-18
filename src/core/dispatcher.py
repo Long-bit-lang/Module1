@@ -135,10 +135,10 @@ class Dispatcher:
             self.last_failure = NO_FREE_DRIVER
             return None
         result = strategy.find_driver(self.graph, request.pickup_node, free_drivers)
-        self.last_match_result = result
         if result.driver_id is None or result.eta is None:
             self.last_failure = NO_ROUTE
             return None
+        self.last_match_result = result
         if result.driver_id not in free_drivers:
             raise ValueError('Chiến lược trả về tài xế không rảnh / không tồn tại')
         if isinstance(result.eta, bool) or not isfinite(result.eta) or result.eta < 0:

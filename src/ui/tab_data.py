@@ -36,11 +36,16 @@ def _on_add_driver() -> None:
 def _on_update_driver() -> None:
     did = S.item_id(st.session_state["edit_driver"])
     name_val = st.session_state.get(f"edit_name_{did}", "").strip()
+    cur_drv = S.dispatcher().drivers.get(did)
+    cur_node = cur_drv.node if cur_drv is not None else None
+    node_raw = st.session_state.get(f"edit_node_{did}_{cur_node}")
+    if node_raw is None:
+        node_raw = st.session_state.get(f"edit_node_{did}")
     ok, _ = S.perform(
         lambda: S.dispatcher().update_driver(
             did,
             name=name_val or None,
-            node=S.item_id(st.session_state[f"edit_node_{did}"]),
+            node=S.item_id(node_raw) if node_raw else None,
         ),
         f"Đã cập nhật thông tin tài xế {did}",
     )
@@ -145,7 +150,7 @@ def render() -> None:
                 st.selectbox(
                     "Vị trí",
                     labels,
-                    key=f"edit_node_{chosen}",
+                    key=f"edit_node_{chosen}_{cur.node}",
                     index=nodes.index(cur.node) if cur.node in nodes else 0,
                     disabled=cur.status == BUSY,
                 )

@@ -11,6 +11,7 @@
 /src/core/strategies.py @Duy
 /tests/conftest.py @Duy
 /tests/test_algorithms.py @Duy
+/tests/benchmark_algorithms.py @Duy @Long
 
 # Điều phối & Undo/Redo (TV3 - Thông)
 /src/core/dispatcher.py @Thong

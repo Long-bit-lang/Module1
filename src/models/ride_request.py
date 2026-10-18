@@ -1,8 +1,6 @@
 from typing import Any
 from .base_entity import BaseEntity
-from .trip import ASSIGNED
-
-QUEUED = "queued"
+from .constants import ASSIGNED, QUEUED
 
 _VALID_STATUSES = {QUEUED, ASSIGNED}
 

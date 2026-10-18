@@ -1,4 +1,3 @@
-# Bảng benchmark ở docs/ALGORITHM_BENCHMARK.md
 import math
 import pytest
 import random

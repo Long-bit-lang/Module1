@@ -172,24 +172,32 @@ Kết quả kiểm thử chuẩn:
 
 ## 7. Kịch bản chạy mẫu (Demo Walkthrough)
 
-Để quan sát đầy đủ các chức năng nghiệp vụ, thực hiện theo 5 bước sau trên giao diện:
+Dữ liệu mẫu (`seed`) đã có sẵn 2 tài xế rảnh (`D1` tại `N3`, `D2` tại `N2`) và 2 yêu cầu đang chờ trong hàng đợi FIFO: **`R3`** (đón tại `N4`) và **`R4`** (đón tại `N5`). Để quan sát đầy đủ luồng nghiệp vụ và thuật toán, thực hiện các bước sau:
 
-1. **Kiểm tra dữ liệu mạng lưới (Tab "Quản lý dữ liệu")**:
-   - Quan sát bản đồ đồ thị và vị trí các tài xế rảnh (đỉnh viền xanh).
-   - Điền form để thêm một tài xế mới tại một đỉnh bất kỳ (ví dụ: `N2 - Bến xe Trung tâm`).
+1. **Khám phá mạng lưới & Trạng thái khởi tạo (Tab "Quản lý dữ liệu")**:
+   - Quan sát bản đồ đồ thị và vị trí các tài xế rảnh `D1`, `D2`.
+   - Có thể thêm tài xế mới hoặc chỉnh sửa thông tin tài xế sẵn có.
    - Nút **🌱 Reset về dữ liệu mẫu (Seed)**: Cho phép khôi phục toàn bộ trạng thái hệ thống từ thư mục mẫu ban đầu (`data/seed/`) bất kỳ lúc nào để bắt đầu lại kịch bản sạch sẽ.
-2. **Tạo yêu cầu đặt xe (Tab "Điều phối chuyến")**:
-   - Chọn điểm đón (`N3 - Cầu Rồng`) và điểm trả (`N6 - Chợ Hàn`).
-   - Nhấn **Gửi yêu cầu**. Yêu cầu xuất hiện ngay trong danh sách Hàng đợi FIFO.
-   - Nút **Hủy yêu cầu**: Cho phép khách hàng hủy một yêu cầu đang chờ (`QUEUED`) ra khỏi hàng đợi FIFO nếu thay đổi ý định.
-3. **Thực hiện điều phối**:
-   - Chọn thuật toán **A2 (Dijkstra đảo chiều)**.
-   - Nhấn **Ghép chuyến** (hoặc **Ghép tất cả**). Hệ thống tự động chọn tài xế rảnh gần nhất, hiển thị thẻ kết quả với ETA, số đỉnh duyệt và chuỗi breadcrumb lộ trình.
-4. **Kiểm tra tính năng Hoàn tác (Undo / Redo)**:
-   - Nhấn **Undo**: Chuyến xe vừa gán bị hủy, tài xế quay về trạng thái rảnh, yêu cầu quay lại vị trí số 1 trong hàng đợi FIFO.
-   - Nhấn **Redo**: Phục hồi lại chuyến xe vừa hoàn tác.
+
+2. **Minh họa Hàng đợi FIFO & Cơ chế Hòa khoảng cách (Tie-breaking)**:
+   - Chuyển sang Tab **"Điều phối chuyến"**. Hàng đợi FIFO đang có `R3` ở đầu hàng và `R4` kế tiếp.
+   - Chọn thuật toán **A2 (Dijkstra đảo chiều)** (hoặc **A1**).
+   - Nhấn **Ghép chuyến**: Do nguyên tắc FIFO, hệ thống sẽ xử lý yêu cầu đầu hàng là **`R3`** (đón tại `N4`).
+   - *Điểm nhấn thuật toán*: Cả `D1` (tại `N3`) và `D2` (tại `N2`) đều cách `N4` khoảng cách bằng nhau (ETA = 6.0). Quy tắc tie-breaking (ưu tiên ID nhỏ hơn theo thứ tự từ điển) sẽ quyết định ghép chuyến thành công cho **`D1`**.
+   - Thẻ kết quả hiển thị chi tiết: Tài xế `D1`, ETA = 6.0 phút, số đỉnh duyệt và chuỗi breadcrumb lộ trình.
+
+3. **Kiểm tra tính năng Hoàn tác (Undo / Redo)**:
+   - Nhấn **Undo**: Chuyến xe vừa ghép cho `R3` bị hủy, `D1` quay về trạng thái rảnh (`FREE`), `R3` quay lại vị trí số 1 trong hàng đợi FIFO.
+   - Nhấn **Redo**: Phục hồi lại chuyến xe của `R3` và chuyển `D1` sang bận (`BUSY`).
+
+4. **Tạo yêu cầu mới & Hủy yêu cầu**:
+   - Trong form **"Tạo yêu cầu đặt xe mới"**, chọn điểm đón (`N3 - Cầu Rồng`) và điểm trả (`N6 - Chợ Hàn`) rồi nhấn **Gửi yêu cầu**.
+   - Yêu cầu mới (`R5`) được xếp vào cuối hàng đợi (sau `R4`).
+   - Có thể nhấn **Hủy yêu cầu** để thử nghiệm hủy một yêu cầu đang chờ (`QUEUED`) ra khỏi hàng đợi.
+   - Nhấn **Ghép tất cả (Dispatch All)**: Hệ thống sẽ tự động ghép lần lượt các yêu cầu còn lại trong hàng đợi cho các tài xế rảnh tương ứng.
+
 5. **Hoàn thành chuyến & Đối chuẩn thuật toán**:
-   - Nhấn nút **Hoàn thành** tại danh sách chuyến xe. Tài xế di chuyển về điểm trả và chuyển sang trạng thái rảnh.
+   - Tại danh sách chuyến xe đang chạy, nhấn **Hoàn thành**: Tài xế di chuyển tới điểm trả khách và tự động chuyển về trạng thái rảnh (`FREE`).
    - Chuyển sang Tab **"Đối chuẩn thuật toán"**: Nhấn **Chạy đối chuẩn** để so sánh trực quan thời gian chạy và số đỉnh duyệt giữa A1 và A2 qua biểu đồ cột; hoặc mở mục **Thử nghiệm mở rộng quy mô** để quan sát ưu thế vượt trội của A2 khi số tài xế tăng lên 100.
 
 ---

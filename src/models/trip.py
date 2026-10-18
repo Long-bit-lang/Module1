@@ -1,9 +1,7 @@
 import math
 from typing import Any
 from .base_entity import BaseEntity
-
-ASSIGNED = "assigned"
-COMPLETED = "completed"
+from .constants import ASSIGNED, COMPLETED
 
 _VALID_STATUSES = {ASSIGNED, COMPLETED}
 

@@ -114,15 +114,16 @@ def print_document_section() -> None:
     print(f"- Mỗi chiến lược chạy {DOC_REPEATS} lần, thời gian là trung vị của runtime_ms; "
           f"visited_count và driver lấy từ lần chạy đầu")
     print()
-    print("| Chiến lược | driver_id | ETA (phút) | visited_count | Thời gian trung vị (ms) |")
-    print("|---|---:|---:|---:|---:|")
+    print("| Chiến lược | driver_id | ETA (phút) | visited_count | Lần đầu (cold, ms) | Trung vị warm (ms) |")
+    print("|---|---:|---:|---:|---:|---:|")
 
     all_match = True
     for name, strategy in strategies:
         runs = [strategy.find_driver(graph, pickup, drivers) for _ in range(DOC_REPEATS)]
         rep = runs[0]
-        median_ms = statistics.median(r.runtime_ms for r in runs)
-        print(f"| {name} | {rep.driver_id} | {rep.eta:.1f} | {rep.visited_count} | {median_ms:.4f} |")
+        cold_ms = rep.runtime_ms
+        warm_median_ms = statistics.median(r.runtime_ms for r in runs[1:])
+        print(f"| {name} | {rep.driver_id} | {rep.eta:.1f} | {rep.visited_count} | {cold_ms:.4f} | {warm_median_ms:.4f} |")
 
         expected_visited = DOC_EXPECTED["A1_visited" if name.startswith("A1") else "A2_visited"]
         all_match &= (

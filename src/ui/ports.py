@@ -47,7 +47,8 @@ class StoragePort(Protocol):
 
 # Tên thuộc tính/phương thức bắt buộc của Dispatcher thật (dùng để tự nhận biết backend).
 DISPATCHER_REQUIRED = (
-    "submit_request", "add_driver", "update_driver", "remove_driver", "dispatch_next",
-    "complete_trip", "can_undo", "can_redo", "undo", "redo",
-    "queue_snapshot", "trips_snapshot", "drivers_snapshot", "export_state", "from_state",
+    "submit_request", "cancel_request", "add_driver", "update_driver", "remove_driver",
+    "dispatch_next", "dispatch_all", "ride_estimate", "complete_trip", "can_undo", "can_redo",
+    "undo", "redo", "queue_snapshot", "trips_snapshot", "drivers_snapshot",
+    "export_state", "from_state",
 )

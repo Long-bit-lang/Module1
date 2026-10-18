@@ -120,10 +120,10 @@ class FakeDispatcher:
             self.last_failure = "no_free_driver"
             return None
         res = strategy.find_driver(self.graph, req.pickup_node, free)
-        self.last_match_result = res
         if res.driver_id is None or res.eta is None:
             self.last_failure = "no_route"
             return None
+        self.last_match_result = res
         self.queue.pop(0)
         req.status = ASSIGNED
         self.drivers[res.driver_id].status = BUSY

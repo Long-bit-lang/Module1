@@ -107,14 +107,23 @@ def _run(pickups: list[str], repeats: int) -> dict:
 def _agreement(df: pd.DataFrame) -> pd.DataFrame:
     out = []
     for pickup, grp in df.groupby("Điểm đón", sort=False):
-        drivers, etas = set(grp["Tài xế"]), grp["ETA (phút)"].tolist()
-        same_eta = all((e is None) == (etas[0] is None) and (e is None or abs(e - etas[0]) < 1e-6) for e in etas)
+        drivers = grp["Tài xế"].tolist()
+        etas = grp["ETA (phút)"].tolist()
+        same_drv = all(
+            (pd.isna(d) and pd.isna(drivers[0])) or (not pd.isna(d) and not pd.isna(drivers[0]) and d == drivers[0])
+            for d in drivers
+        )
+        same_eta = all(
+            (pd.isna(e) and pd.isna(etas[0]))
+            or (not pd.isna(e) and not pd.isna(etas[0]) and abs(e - etas[0]) < 1e-6)
+            for e in etas
+        )
         out.append(
             {
                 "Điểm đón": pickup,
-                "Cùng tài xế": len(drivers) == 1,
+                "Cùng tài xế": same_drv,
                 "Cùng ETA": same_eta,
-                "Khớp": len(drivers) == 1 and same_eta,
+                "Khớp": same_drv and same_eta,
             }
         )
     return pd.DataFrame(out)
@@ -130,24 +139,29 @@ def _build_side_by_side_table(df: pd.DataFrame) -> pd.DataFrame:
             continue
         r1, r2 = a1_row.iloc[0], a2_row.iloc[0]
 
-        same_drv = r1["Tài xế"] == r2["Tài xế"]
+        same_drv = (
+            (pd.isna(r1["Tài xế"]) and pd.isna(r2["Tài xế"]))
+            or (not pd.isna(r1["Tài xế"]) and not pd.isna(r2["Tài xế"]) and r1["Tài xế"] == r2["Tài xế"])
+        )
         same_eta = (
-            (r1["ETA (phút)"] is None and r2["ETA (phút)"] is None)
+            (pd.isna(r1["ETA (phút)"]) and pd.isna(r2["ETA (phút)"]))
             or (
-                r1["ETA (phút)"] is not None
-                and r2["ETA (phút)"] is not None
+                not pd.isna(r1["ETA (phút)"])
+                and not pd.isna(r2["ETA (phút)"])
                 and abs(r1["ETA (phút)"] - r2["ETA (phút)"]) < 1e-6
             )
         )
 
-        eta_str = f"{r1['ETA (phút)']:g} phút" if r1["ETA (phút)"] is not None else "Không tới được"
-        drv_str = r1["Tài xế"] if r1["Tài xế"] is not None else "Không có xe"
+        eta_str = "Không tới được" if pd.isna(r1["ETA (phút)"]) else f"{r1['ETA (phút)']:g} phút"
+        drv_str = "Không có xe" if pd.isna(r1["Tài xế"]) else str(r1["Tài xế"])
+        r2_drv_str = "Không có xe" if pd.isna(r2["Tài xế"]) else str(r2["Tài xế"])
+        eta_mismatch_str = f"{'N/A' if pd.isna(r1['ETA (phút)']) else r1['ETA (phút)']} vs {'N/A' if pd.isna(r2['ETA (phút)']) else r2['ETA (phút)']}"
 
         rows.append(
             {
                 "Điểm đón": r1["Tên địa danh"],
-                "Tài xế chọn (A1 / A2)": f"{drv_str} 🤝 {r2['Tài xế']}" if not same_drv else f"{drv_str} (Khớp)",
-                "ETA đón (A1 / A2)": eta_str if same_eta else f"{r1['ETA (phút)']} vs {r2['ETA (phút)']}",
+                "Tài xế chọn (A1 / A2)": f"{drv_str} 🤝 {r2_drv_str}" if not same_drv else f"{drv_str} (Khớp)",
+                "ETA đón (A1 / A2)": eta_str if same_eta else eta_mismatch_str,
                 "Đỉnh duyệt: A1": r1["Số đỉnh đã thăm"],
                 "Đỉnh duyệt: A2": r2["Số đỉnh đã thăm"],
                 "Chênh lệch đỉnh (A2 - A1)": f"{r2['Số đỉnh đã thăm'] - r1['Số đỉnh đã thăm']:+d}",
@@ -439,13 +453,13 @@ def render() -> None:
                     st.markdown("**Số đỉnh duyệt qua Min-Heap theo số tài xế rảnh ($k$)**")
                     piv_nodes = sc.pivot(index="Số tài xế rảnh", columns="Thuật toán", values="Số đỉnh đã thăm")
                     st.line_chart(piv_nodes)
-                    st.caption("📈 **Nhận xét:** Đường A1 tăng tuyến tính theo số tài xế rảnh $k$, trong khi A2 không phụ thuộc tuyến tính vào $k$ (thậm chí có xu hướng giảm khi $k$ lớn do thuật toán gặp tài xế gần và dừng sớm hơn).")
+                    st.caption("📈 **Nhận xét:** Đường A1 tăng xấp xỉ tuyến tính theo số tài xế rảnh $k$, trong khi A2 không phụ thuộc tuyến tính vào $k$ (thậm chí có xu hướng giảm khi $k$ lớn do thuật toán gặp tài xế gần và dừng sớm hơn).")
             with c_sc2:
                 with st.container(border=True):
                     st.markdown("**Thời gian chạy trung vị (ms) theo số tài xế rảnh ($k$)**")
                     piv_time = sc.pivot(index="Số tài xế rảnh", columns="Thuật toán", values="Runtime trung vị (ms)")
                     st.line_chart(piv_time)
-                    st.caption("⚡ **Nhận xét:** Thời gian chạy của A2 duy trì ở mức thấp và không bị tăng tuyến tính theo số lượng tài xế rảnh $k$ như A1.")
+                    st.caption("⚡ **Nhận xét:** Thời gian chạy của A2 duy trì ở mức thấp và không bị tăng xấp xỉ tuyến tính theo số lượng tài xế rảnh $k$ như A1.")
 
     st.divider()
 

@@ -1,9 +1,7 @@
 from __future__ import annotations
 from typing import Any
 from .base_entity import BaseEntity
-
-FREE = "free"
-BUSY = "busy"
+from .constants import BUSY, FREE
 
 _VALID_STATUSES = {FREE, BUSY}
 

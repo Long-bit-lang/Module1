@@ -5,7 +5,7 @@ Chưa sửa trực tiếp vào CONTRACT vì thay đổi liên module phải đư
 
 | # | Vấn đề | Đề xuất | Người cần xác nhận | Trạng thái |
 |---|---|---|---|---|
-| 1 | `DispatchAction` ghi 3 trường trong kế hoạch nhưng 4 trường (`previous_driver_node`) trong CONTRACT; `dispatch_next` không đổi vị trí tài xế nên trường này chưa rõ mục đích. | Chốt một bản. Nếu không có lý do rõ ràng thì bỏ `previous_driver_node`. | Thông | Đang chờ chốt |
+| 1 | `DispatchAction` ghi 3 trường trong kế hoạch nhưng 4 trường (`previous_driver_node`) trong CONTRACT; `dispatch_next` không đổi vị trí tài xế. | Thống nhất giữ lại trường này với mục đích phòng thủ (defensive programming), bảo đảm Undo luôn khôi phục vị trí chuẩn xác kể cả khi luồng nghiệp vụ tương lai mở rộng thay đổi vị trí tài xế lúc nhận chuyến. | Thông | Đã thống nhất |
 | 2 | Undo sau `complete_trip` làm sai trạng thái (tài xế đã rảnh và đã đổi vị trí, trip đã `COMPLETED`). | `complete_trip` xóa `undo_stack` và `redo_stack` (UI mock và Dispatcher thật đang làm theo cách này), `can_undo()` trả về `False` khi không còn action. | Thông | Đã triển khai |
 | 3 | `save_all` cần `locations` nhưng `Dispatcher` không nhận hay giữ `locations`, nên `export_state()` không xuất được tên đỉnh cho `graph.json`. | Thêm `locations` vào constructor, `from_state` và `export_state`. | Thông, Thắng | Đã triển khai |
 | 4 | `dispatch_next` chỉ trả `Trip` nên UI không có `visited_count`, `runtime_ms`, `path` để hiển thị; thiếu lý do thất bại. | Dispatcher bổ sung `last_match_result: MatchResult | None`, `last_failure: str | None`, `dispatch_all()`, `ride_estimate()`. | Thông, Duy | Đã triển khai |
