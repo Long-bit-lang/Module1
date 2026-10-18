@@ -4,8 +4,8 @@ Nguyên tắc (CONTRACT mục 7):
 - Dispatcher chỉ khởi tạo MỘT LẦN cho mỗi phiên và giữ trong session_state, không nạp lại
   từ đĩa ở mỗi lần rerun, để hai ngăn xếp Undo/Redo không bị mất.
 - Sau mỗi thao tác thành công gọi save_all(export_state()).
-- Backend thật chưa đủ API thì tự rơi về mock (xem mock.py). Ép bằng biến môi trường
-  RIDE_DISPATCH_BACKEND = "mock" | "real".
+- Mặc định chạy Backend thật (RIDE_DISPATCH_BACKEND="real"), ném lỗi rõ ràng nếu dữ liệu hỏng.
+  Hỗ trợ chạy backend giả lập bằng RIDE_DISPATCH_BACKEND="mock" hoặc tự động rơi về mock khi đặt RIDE_DISPATCH_BACKEND="auto".
 """
 from __future__ import annotations
 
@@ -73,6 +73,20 @@ def reload_from_disk() -> None:
     for k in (K_DISPATCHER, K_STORAGE, K_STRATEGIES, K_LOCATIONS, K_LAST):
         st.session_state.pop(k, None)
     init_session()
+
+
+def reset_to_seed() -> None:
+    """Khôi phục hoàn toàn dữ liệu runtime từ thư mục seed ban đầu."""
+    import shutil
+    s = storage()
+    if hasattr(s, "seed_dir") and hasattr(s, "runtime_dir"):
+        req_files = getattr(s, "REQUIRED_FILES", ("graph.json", "drivers.json", "requests.json", "trips.json"))
+        for filename in req_files:
+            seed_file = s.seed_dir / filename
+            runtime_file = s.runtime_dir / filename
+            if seed_file.exists():
+                shutil.copy2(seed_file, runtime_file)
+    reload_from_disk()
 
 
 # --------------------------------------------------------------------- truy cập

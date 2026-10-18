@@ -139,8 +139,24 @@ class FakeDispatcher:
             trips.append(trip)
         return trips
 
-    def ride_estimate(self, request_id: str) -> tuple[float, list[str]] | None:
+    def cancel_request(self, request_id: str) -> bool:
         req = self.all_requests.get(request_id)
+        if req is None or req.status != QUEUED:
+            return False
+        self.queue = [r for r in self.queue if r.id != request_id]
+        del self.all_requests[request_id]
+        return True
+
+    def ride_estimate(
+        self, request_id_or_pickup: str, dropoff_node: str | None = None
+    ) -> tuple[float, list[str]] | None:
+        if dropoff_node is not None:
+            pickup_node = request_id_or_pickup
+            if not self.graph.has_node(pickup_node) or not self.graph.has_node(dropoff_node):
+                return None
+            eta, path, _ = shortest_path(self.graph, pickup_node, dropoff_node)
+            return None if eta is None else (eta, path)
+        req = self.all_requests.get(request_id_or_pickup)
         if req is None:
             return None
         eta, path, _ = shortest_path(self.graph, req.pickup_node, req.dropoff_node)

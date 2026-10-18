@@ -62,7 +62,15 @@ def _on_reload() -> None:
     ok, _ = S.perform(S.reload_from_disk)
     if ok:
         st.session_state[S.K_LAST] = None
-        S.flash("info", "Đã nạp lại dữ liệu từ đĩa; lịch sử Undo/Redo đã được đặt lại.")
+        S.flash("info", "Đã nạp lại dữ liệu từ đĩa runtime; lịch sử Undo/Redo đã được đặt lại.")
+
+
+def _on_reset_seed() -> None:
+    ok, _ = S.perform(S.reset_to_seed)
+    if ok:
+        st.session_state[S.K_LAST] = None
+        S.flash("success", "Đã khôi phục toàn bộ dữ liệu mẫu ban đầu (Seed); lịch sử Undo/Redo đã được làm mới.")
+
 
 
 def render() -> None:
@@ -156,9 +164,21 @@ def render() -> None:
             st.info("Chưa có tài xế nào trong hệ thống.")
 
     st.divider()
-    st.button(
-        "Tải lại dữ liệu từ đĩa",
-        on_click=_on_reload,
-        key="btn_reload",
-        help="Khôi phục trạng thái ban đầu từ file JSON. Lịch sử Undo/Redo sẽ được làm mới.",
-    )
+    c_btn1, c_btn2 = st.columns(2)
+    with c_btn1:
+        st.button(
+            "🔄 Tải lại dữ liệu từ runtime",
+            on_click=_on_reload,
+            key="btn_reload",
+            help="Nạp lại dữ liệu từ file trong data/runtime/ (bỏ các thay đổi chưa lưu; làm mới Undo/Redo).",
+            width="stretch",
+        )
+    with c_btn2:
+        st.button(
+            "🌱 Reset về dữ liệu mẫu (Seed)",
+            on_click=_on_reset_seed,
+            key="btn_reset_seed",
+            type="secondary",
+            help="Khôi phục toàn bộ dữ liệu runtime về trạng thái ban đầu từ data/seed/. Phù hợp khi bắt đầu demo.",
+            width="stretch",
+        )

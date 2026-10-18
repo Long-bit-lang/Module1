@@ -785,6 +785,7 @@ name = "ride-dispatch"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "pandas" },
     { name = "streamlit" },
 ]
 
@@ -794,7 +795,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "streamlit", specifier = ">=1.35" }]
+requires-dist = [
+    { name = "pandas", specifier = ">=2" },
+    { name = "streamlit", specifier = ">=1.63" },
+]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8" }]

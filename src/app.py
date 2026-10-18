@@ -1,6 +1,9 @@
 """TV5 - Entrypoint Streamlit chính cho hệ thống điều phối đặt xe thông minh."""
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import streamlit as st
 
 from ui import session, tab_benchmark, tab_data, tab_dispatch
@@ -13,9 +16,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-import os
-import shutil
-from pathlib import Path
 
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
@@ -25,9 +25,14 @@ except Exception as exc:
     st.error(f"Lỗi khởi tạo dữ liệu: {exc}")
     runtime_env = os.environ.get("RIDE_DISPATCH_RUNTIME_DIR")
     runtime_dir = Path(runtime_env) if runtime_env else Path(__file__).resolve().parent.parent / "data" / "runtime"
-    if st.button("Xóa runtime và nạp lại từ seed"):
-        if runtime_dir.exists():
-            shutil.rmtree(runtime_dir)
+    if st.button("Xóa file runtime và nạp lại từ seed"):
+        for filename in ("graph.json", "drivers.json", "requests.json", "trips.json"):
+            target = runtime_dir / filename
+            if target.is_file():
+                try:
+                    target.unlink()
+                except OSError:
+                    pass
         st.rerun()
     st.stop()
 
@@ -78,6 +83,8 @@ def _on_tab_change() -> None:
 
 if "active_tab" not in st.session_state:
     st.session_state["active_tab"] = TAB_NAMES[0]
+elif "main_tabs" in st.session_state and st.session_state["main_tabs"] in TAB_NAMES:
+    st.session_state["active_tab"] = st.session_state["main_tabs"]
 
 t_data, t_dispatch, t_bench = st.tabs(
     TAB_NAMES,

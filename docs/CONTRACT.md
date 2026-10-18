@@ -103,7 +103,7 @@
 - **Giao diện API của `Dispatcher`**:
   - **Thuộc tính trạng thái bổ sung**:
     - `last_match_result: MatchResult | None`: Chi tiết thuật toán (visited_count, runtime_ms, path) của lần gọi `dispatch_next` gần nhất.
-    - `last_failure: str | None`: Mã nguyên nhân thất bại nếu lần điều phối gần nhất không thành công (`"EMPTY_QUEUE"`, `"NO_FREE_DRIVER"`, `"NO_ROUTE"`, hoặc `None` nếu thành công).
+    - `last_failure: str | None`: Mã nguyên nhân thất bại nếu lần điều phối gần nhất không thành công (`"empty_queue"`, `"no_free_driver"`, `"no_route"`, hoặc `None` nếu thành công).
   - **Quản lý yêu cầu**:
     - `submit_request(pickup_node: str, dropoff_node: str) -> RideRequest`: Tự động sinh ID theo quy tắc `R` + số thứ tự tăng dần. Kiểm tra tính hợp lệ của `pickup_node` và `dropoff_node` bằng `graph.has_node()`. Kiểm tra `pickup_node != dropoff_node` và kiểm tra tồn tại đường đi từ điểm đón đến điểm trả bằng thuật toán tìm đường ngắn nhất; ném `ValueError` kèm thông báo tiếng Việt nếu đỉnh không tồn tại, trùng nhau hoặc không có đường đi. Đặt trạng thái `QUEUED`, thêm vào `all_requests` và `queue.enqueue()`.
   - **Quản lý tài xế**:
@@ -111,7 +111,7 @@
     - `update_driver(driver_id: str, name: str | None = None, node: str | None = None) -> Driver`: Cập nhật thông tin tài xế. Không cho phép đổi vị trí nếu tài xế đang `BUSY`. Tên tài xế được chuẩn hóa qua `strip()`.
     - `remove_driver(driver_id: str) -> bool`: Xóa tài xế; ném `ValueError` nếu tài xế đang ở trạng thái `BUSY`, hoặc đã có lịch sử tham gia chuyến đi trong `trips`, hoặc đang được tham chiếu trong ngăn xếp `UndoManager`.
   - **Điều phối chuyến**:
-    - `dispatch_next(strategy: MatchStrategy) -> Trip | None`: Lấy yêu cầu ở đầu hàng đợi (`peek()`). Nếu không có yêu cầu, không có tài xế rảnh, hoặc không có đường đi đến điểm đón: ghi nhận mã lý do thất bại vào `self.last_failure` (`"EMPTY_QUEUE"`, `"NO_FREE_DRIVER"`, `"NO_ROUTE"`), đặt `self.last_match_result = None`, trả về `None` và giữ nguyên yêu cầu ở đầu hàng đợi. Nếu thành công: dequeue request, chuyển request sang `ASSIGNED`, chuyển driver sang `BUSY`, tạo `Trip` mới (ID tự sinh `T` + số), lưu kết quả thuật toán vào `self.last_match_result: MatchResult`, đặt `self.last_failure = None`, ghi nhận vào `UndoManager` và trả về `Trip`.
+    - `dispatch_next(strategy: MatchStrategy) -> Trip | None`: Lấy yêu cầu ở đầu hàng đợi (`peek()`). Nếu không có yêu cầu, không có tài xế rảnh, hoặc không có đường đi đến điểm đón: ghi nhận mã lý do thất bại vào `self.last_failure` (`"empty_queue"`, `"no_free_driver"`, `"no_route"`), đặt `self.last_match_result = None`, trả về `None` và giữ nguyên yêu cầu ở đầu hàng đợi. Nếu thành công: dequeue request, chuyển request sang `ASSIGNED`, chuyển driver sang `BUSY`, tạo `Trip` mới (ID tự sinh `T` + số), lưu kết quả thuật toán vào `self.last_match_result: MatchResult`, đặt `self.last_failure = None`, ghi nhận vào `UndoManager` và trả về `Trip`.
     - `dispatch_all(strategy: MatchStrategy) -> list[Trip]`: Điều phối liên tục các yêu cầu trong hàng đợi cho đến khi hàng đợi rỗng hoặc không thể ghép thêm chuyến nào. Trả về danh sách các `Trip` được tạo.
     - `ride_estimate(pickup_node: str, dropoff_node: str) -> tuple[float, list[str]] | None`: Tính khoảng cách/thời gian và lộ trình di chuyển từ điểm đón đến điểm trả khách bằng thuật toán tìm đường ngắn nhất. Trả về `(quang_duong, danh_sach_dinh)` hoặc `None` nếu không có đường đi.
   - **Vòng đời tài xế & Hoàn thành chuyến**:

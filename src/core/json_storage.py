@@ -246,6 +246,44 @@ class JsonStorage:
             trip_ids.add(trip.id)
             trips.append(trip)
 
+        # 6. Kiểm tra tính nhất quán trạng thái nghiệp vụ giữa Drivers, Requests và Trips
+        active_trips = [t for t in trips if t.status == "assigned"]
+        active_driver_ids: set[str] = set()
+        active_request_ids: set[str] = set()
+
+        for t in active_trips:
+            if t.driver_id in active_driver_ids:
+                raise StorageError(
+                    f"Tài xế '{t.driver_id}' đang được gán cho nhiều hơn một chuyến đi chưa hoàn thành."
+                )
+            if t.request_id in active_request_ids:
+                raise StorageError(
+                    f"Yêu cầu '{t.request_id}' đang được gán cho nhiều hơn một chuyến đi chưa hoàn thành."
+                )
+            active_driver_ids.add(t.driver_id)
+            active_request_ids.add(t.request_id)
+
+        for driver in drivers.values():
+            if driver.status == "busy" and driver.id not in active_driver_ids:
+                raise StorageError(
+                    f"Tài xế '{driver.id}' có trạng thái '{driver.status}' nhưng không có chuyến đi đang thực hiện (assigned)."
+                )
+            if driver.status == "free" and driver.id in active_driver_ids:
+                raise StorageError(
+                    f"Tài xế '{driver.id}' có trạng thái '{driver.status}' nhưng đang được gán cho chuyến đi chưa hoàn thành."
+                )
+
+        all_trip_request_ids = {t.request_id for t in trips}
+        for req in requests:
+            if req.status == "assigned" and req.id not in all_trip_request_ids:
+                raise StorageError(
+                    f"Yêu cầu '{req.id}' có trạng thái '{req.status}' nhưng không tìm thấy chuyến đi nào trong lịch sử chuyến."
+                )
+            if req.status == "queued" and req.id in active_request_ids:
+                raise StorageError(
+                    f"Yêu cầu '{req.id}' có trạng thái '{req.status}' nhưng đang được gán cho một chuyến đi chưa hoàn thành."
+                )
+
         return {
             "graph": graph,
             "drivers": drivers,
@@ -255,7 +293,11 @@ class JsonStorage:
         }
 
     def save_all(self, state: dict[str, Any]) -> None:
-        """Chuyển đổi trạng thái các đối tượng thực thể qua to_dict() và lưu an toàn vào runtime."""
+        """Chuyển đổi trạng thái các đối tượng thực thể qua to_dict() và lưu an toàn vào runtime.
+        
+        Áp dụng cơ chế atomic từng file kết hợp chuẩn bị toàn bộ file .tmp trước khi hoán đổi (os.replace)
+        để giảm thiểu tối đa rủi ro không nhất quán dữ liệu giữa các file JSON.
+        """
         if not isinstance(state, dict):
             raise StorageError("Trạng thái truyền vào save_all() phải là một dict.")
 
@@ -267,42 +309,70 @@ class JsonStorage:
         graph: RoadGraph = state["graph"]
         locations: dict[str, Location] = state.get("locations") or {}
 
-        # 1. Chuẩn bị dữ liệu cho graph.json
-        nodes_payload: list[dict[str, Any]] = []
-        for node_id in graph.nodes():
-            if node_id in locations:
-                nodes_payload.append(locations[node_id].to_dict())
-            else:
-                raise StorageError(f"Location và graph không đồng bộ: '{node_id}.")
+        written_tmp_files: list[tuple[Path, Path]] = []
+        try:
+            # 1. Chuẩn bị dữ liệu cho graph.json
+            nodes_payload: list[dict[str, Any]] = []
+            for node_id in graph.nodes():
+                if node_id in locations:
+                    nodes_payload.append(locations[node_id].to_dict())
+                else:
+                    raise StorageError(f"Location và graph không đồng bộ: '{node_id}'.")
 
-        edges_payload: list[dict[str, Any]] = [
-            {"from": u, "to": v, "weight": float(w)}
-            for u, v, w in graph.edges()
-        ]
+            edges_payload: list[dict[str, Any]] = [
+                {"from": u, "to": v, "weight": float(w)}
+                for u, v, w in graph.edges()
+            ]
 
-        # 2. Chuẩn bị dữ liệu cho drivers.json (hỗ trợ cả dict[str, Driver] lẫn list[Driver])
-        raw_drivers = state["drivers"]
-        driver_iterable = (
-            raw_drivers.values() if isinstance(raw_drivers, dict) else raw_drivers
-        )
-        drivers_payload = [driver.to_dict() for driver in driver_iterable]
+            # 2. Chuẩn bị dữ liệu cho drivers.json (hỗ trợ cả dict[str, Driver] lẫn list[Driver])
+            raw_drivers = state["drivers"]
+            driver_iterable = (
+                raw_drivers.values() if isinstance(raw_drivers, dict) else raw_drivers
+            )
+            drivers_payload = [driver.to_dict() for driver in driver_iterable]
 
-        # 3. Chuẩn bị dữ liệu cho requests.json (hỗ trợ cả list[RideRequest] lẫn dict[str, RideRequest])
-        raw_requests = state["requests"]
-        request_iterable = (
-            raw_requests.values() if isinstance(raw_requests, dict) else raw_requests
-        )
-        requests_payload = [req.to_dict() for req in request_iterable]
+            # 3. Chuẩn bị dữ liệu cho requests.json (hỗ trợ cả list[RideRequest] lẫn dict[str, RideRequest])
+            raw_requests = state["requests"]
+            request_iterable = (
+                raw_requests.values() if isinstance(raw_requests, dict) else raw_requests
+            )
+            requests_payload = [req.to_dict() for req in request_iterable]
 
-        # 4. Chuẩn bị dữ liệu cho trips.json
-        raw_trips = state["trips"]
-        trip_iterable = (
-            raw_trips.values() if isinstance(raw_trips, dict) else raw_trips
-        )
-        trips_payload = [trip.to_dict() for trip in trip_iterable]
+            # 4. Chuẩn bị dữ liệu cho trips.json
+            raw_trips = state["trips"]
+            trip_iterable = (
+                raw_trips.values() if isinstance(raw_trips, dict) else raw_trips
+            )
+            trips_payload = [trip.to_dict() for trip in trip_iterable]
 
-        # 5. Thực hiện ghi nguyên tử xuống 4 file trong data/runtime/
-        self._atomic_write("graph.json", {"nodes": nodes_payload, "edges": edges_payload})
-        self._atomic_write("drivers.json", {"drivers": drivers_payload})
-        self._atomic_write("requests.json", {"requests": requests_payload})
-        self._atomic_write("trips.json", {"trips": trips_payload})
+            payloads = {
+                "graph.json": {"nodes": nodes_payload, "edges": edges_payload},
+                "drivers.json": {"drivers": drivers_payload},
+                "requests.json": {"requests": requests_payload},
+                "trips.json": {"trips": trips_payload},
+            }
+
+            # 5. Ghi an toàn: ghi và fsync toàn bộ file tạm (.tmp) trước,
+            # nếu tất cả đều thành công mới tiến hành os.replace lần lượt.
+            self.runtime_dir.mkdir(parents=True, exist_ok=True)
+            for filename, payload in payloads.items():
+                target_path = self.runtime_dir / filename
+                tmp_path = self.runtime_dir / f"{filename}.tmp"
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, ensure_ascii=False, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                written_tmp_files.append((tmp_path, target_path))
+
+            for tmp_path, target_path in written_tmp_files:
+                os.replace(tmp_path, target_path)
+        except (AttributeError, KeyError, OSError, TypeError, ValueError) as exc:
+            for tmp_path, _ in written_tmp_files:
+                if tmp_path.exists():
+                    try:
+                        tmp_path.unlink()
+                    except OSError:
+                        pass
+            if isinstance(exc, StorageError):
+                raise
+            raise StorageError(f"Lỗi khi lưu trữ an toàn trạng thái hệ thống: {exc}") from exc

@@ -75,6 +75,19 @@ def _on_redo() -> None:
         )
 
 
+def _on_cancel_request() -> None:
+    val = st.session_state.get("cancel_req_select")
+    if not val:
+        return
+    req_id = S.item_id(val)
+    ok, done = S.perform(lambda: S.dispatcher().cancel_request(req_id))
+    if ok and done:
+        S.flash("success", f"Đã hủy yêu cầu {req_id} khỏi hàng đợi.")
+    elif ok:
+        S.flash("warning", f"Không thể hủy yêu cầu {req_id}.")
+
+
+
 def _on_complete(trip_id: str) -> None:
     ok, done = S.perform(lambda: S.dispatcher().complete_trip(trip_id))
     if ok:
@@ -193,7 +206,23 @@ def render() -> None:
         st.subheader(f"Hàng đợi yêu cầu FIFO ({len(queue)})")
         with st.container(border=True):
             if queue:
-                st.dataframe(_queue_table(queue), hide_index=True, width="stretch", height=180)
+                st.dataframe(_queue_table(queue), hide_index=True, width="stretch", height=150)
+                cq1, cq2 = st.columns([3, 1.5], vertical_alignment="bottom")
+                with cq1:
+                    st.selectbox(
+                        "Hủy yêu cầu khỏi hàng đợi",
+                        [f"{r.id} ({S.node_label(r.pickup_node)} → {S.node_label(r.dropoff_node)})" for r in queue],
+                        key="cancel_req_select",
+                    )
+                with cq2:
+                    st.button(
+                        "Hủy yêu cầu",
+                        on_click=_on_cancel_request,
+                        key="btn_cancel_request",
+                        type="secondary",
+                        width="stretch",
+                        help="Hủy yêu cầu khỏi hàng đợi FIFO (xử lý tình huống nghẽn đầu hàng nếu không có xe đón được)",
+                    )
             else:
                 st.info("Hàng đợi hiện đang trống. Nhập điểm đón/trả ở cột bên trái để tạo yêu cầu mới.")
 

@@ -291,10 +291,12 @@ def render() -> None:
         agree = _agreement(df)
 
         # 1. Banner kết quả đồng thuận
+        total_tested = len(agree)
+        matched_tested = int(agree["Khớp"].sum())
         if agree["Khớp"].all():
-            st.success("✅ **Tuyệt đối chính xác:** A1 và A2 cho cùng tài xế và ETA trên mọi điểm đón đã đo.")
+            st.success(f"✅ **Khớp trên {matched_tested}/{total_tested} điểm đón đã đo:** A1 và A2 cho cùng tài xế và ETA.")
         else:
-            st.error("⚠️ Có điểm đón mà các thuật toán cho kết quả khác nhau:")
+            st.error(f"⚠️ Chỉ khớp {matched_tested}/{total_tested} điểm đón. Có điểm đón mà các thuật toán cho kết quả khác nhau:")
             st.dataframe(agree[~agree["Khớp"]], hide_index=True)
 
         # 2. Thẻ KPI tổng hợp
@@ -303,7 +305,7 @@ def render() -> None:
 
         kp1, kp2, kp3 = st.columns(3)
         with kp1:
-            st.metric("Tỷ lệ khớp kết quả", f"{agree['Khớp'].mean() * 100:.0f}%", "A1 và A2 tuyệt đối nhất quán")
+            st.metric("Tỷ lệ khớp kết quả", f"{agree['Khớp'].mean() * 100:.0f}%", f"Khớp trên {matched_tested}/{total_tested} điểm đón đã đo")
         with kp2:
             if len(names) >= 2:
                 v1, v2 = summary.loc[names[0], "Số đỉnh đã thăm"], summary.loc[names[1], "Số đỉnh đã thăm"]
@@ -344,10 +346,14 @@ def render() -> None:
                 chart_time = df.pivot(index="Tên địa danh", columns="Thuật toán", values="Runtime trung vị (ms)")
                 st.bar_chart(chart_time)
 
-        st.caption(
-            f"ℹ️ **Ghi chú phân tích:** Trên đồ thị nhỏ ({len(d.graph.nodes())} đỉnh, {free} xe rảnh), "
-            f"thời gian chạy của cả hai giải thuật đều dưới 0.1 ms. Để thấy rõ sự vượt trội theo cấp số nhân của A2, "
-            f"hãy xem Thử nghiệm 2 (Quy mô lớn) bên dưới."
+        max_measured_t = df["Runtime trung vị (ms)"].max()
+        st.info(
+            f"ℹ️ **Ghi chú phân tích & Giải thích kết quả:**\n"
+            f"- **Quy mô đồ thị mẫu:** Mạng lưới seed hiện hành chỉ có {len(d.graph.nodes())} đỉnh và {free} xe rảnh ($k={free}$). "
+            f"Thời gian chạy của cả hai giải thuật đều rất nhỏ (tối đa ~{max_measured_t:.3f} ms), do đó ở Thử nghiệm 1, A2 chưa tạo ra sự cách biệt lớn so với A1.\n"
+            f"- **Tính công bằng thuật toán:** Bản cài đặt A1 hiện chạy Dijkstra từng xe rảnh cho đến khi tìm được điểm đón (chưa áp dụng cắt tỉa dựa trên `best_eta`), "
+            f"còn A2 chạy Dijkstra từ điểm đón trên đồ thị đảo và dừng sớm ngay khi đỉnh đầu tiên trong min-heap vượt quá `best_eta`. "
+            f"Lợi thế vượt trội của A2 chỉ thể hiện rõ rệt khi số lượng tài xế rảnh $k$ lớn (xem Thử nghiệm 2 bên dưới)."
         )
 
     st.divider()
@@ -355,8 +361,8 @@ def render() -> None:
     # ── PHẦN 3: ĐỐI CHUẨN QUY MÔ LỚN (MINH CHỨNG SỨC MẠNH A2 KHI K TĂNG) ──────
     st.markdown("### 🚀 Thử nghiệm 2: Minh chứng Vượt trội khi Mở rộng Quy mô (Scalability)")
     st.markdown(
-        "Khi mạng lưới có hàng chục hoặc hàng trăm tài xế rảnh, A1 phải chạy $k$ lượt Dijkstra khiến "
-        "thời gian tính toán tăng theo cấp số nhân, trong khi A2 chỉ chạy 1 lượt duy nhất."
+        "Khi mạng lưới có hàng chục hoặc hàng trăm tài xế rảnh ($k \\gg 1$), A1 phải chạy $k$ lượt Dijkstra khiến "
+        "thời gian tính toán tăng tuyến tính $O(k)$, trong khi A2 chỉ chạy 1 lượt duy nhất $O(1)$ theo $k$."
     )
 
     choice_scale = st.radio(
@@ -382,6 +388,7 @@ def render() -> None:
 
             r1, r2 = doc_res[0], doc_res[1]
             ratio_v = r1["Số đỉnh đã duyệt"] / r2["Số đỉnh đã duyệt"] if r2["Số đỉnh đã duyệt"] else 1
+            pct_saved = ((r1["Số đỉnh đã duyệt"] - r2["Số đỉnh đã duyệt"]) / r1["Số đỉnh đã duyệt"] * 100) if r1["Số đỉnh đã duyệt"] else 0
             ratio_t = (
                 float(r1["Runtime trung vị (ms)"]) / float(r2["Runtime trung vị (ms)"])
                 if float(r2["Runtime trung vị (ms)"])
@@ -392,7 +399,7 @@ def render() -> None:
             with d1:
                 st.success(
                     f"🏆 **Giảm số đỉnh duyệt:** A2 chỉ duyệt **{r2['Số đỉnh đã duyệt']}** đỉnh so với "
-                    f"**{r1['Số đỉnh đã duyệt']:,}** đỉnh của A1 (**giảm {ratio_v:.1f} lần** — tiết kiệm ~99% phép toán heap)!"
+                    f"**{r1['Số đỉnh đã duyệt']:,}** đỉnh của A1 (**giảm {ratio_v:.1f} lần** — tiết kiệm {pct_saved:.1f}% số đỉnh duyệt)!"
                 )
             with d2:
                 st.success(

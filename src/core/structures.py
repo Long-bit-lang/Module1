@@ -7,7 +7,7 @@ from typing import Any, Iterator
 from models.ride_request import RideRequest
 
 
-@dataclass
+@dataclass(eq=False, repr=False)
 class _Node:
     value: Any
     next: _Node | None = None
@@ -47,6 +47,24 @@ class RequestQueue:
             self._tail = self._head
         self._size += 1
 
+    def remove(self, request_id: str) -> bool:
+        """Hủy/xóa một yêu cầu theo ID khỏi hàng đợi."""
+        prev = None
+        curr = self._head
+        while curr is not None:
+            if getattr(curr.value, "id", None) == request_id:
+                if prev is None:
+                    self._head = curr.next
+                else:
+                    prev.next = curr.next
+                if curr is self._tail:
+                    self._tail = prev
+                self._size -= 1
+                return True
+            prev = curr
+            curr = curr.next
+        return False
+
     def __len__(self) -> int:
         return self._size
 
@@ -74,9 +92,18 @@ class Stack:
         self._size -= 1
         return item
 
+    def peek(self) -> Any | None:
+        return None if self._top is None else self._top.value
+
     def clear(self) -> None:
         self._top = None
         self._size = 0
 
     def __len__(self) -> int:
         return self._size
+
+    def __iter__(self) -> Iterator[Any]:
+        node = self._top
+        while node is not None:
+            yield node.value
+            node = node.next

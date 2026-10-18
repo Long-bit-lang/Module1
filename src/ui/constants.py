@@ -1,7 +1,7 @@
 """TV5 - Hằng số trạng thái dùng cho UI.
 
-Nguồn chân lý là `models` (CONTRACT mục 1). Khi TV1 chưa export xong thì dùng giá trị
-dự phòng trùng đúng chuỗi trong CONTRACT, để UI không phải hardcode rải rác.
+Nguồn chân lý là `models` (CONTRACT mục 1). Module này import và tái xuất các hằng số
+trạng thái từ `models` kèm nhãn hiển thị trực quan cho giao diện người dùng.
 """
 from models import ASSIGNED, BUSY, COMPLETED, FREE, QUEUED
 

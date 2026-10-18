@@ -110,15 +110,19 @@ def test_real_backend_dispatch_persists_and_tiebreaks(real_app, tmp_path):
 
 
 def test_tab_selection_persists_on_widget_interaction(app):
-    # Người dùng chọn tab "Điều phối chuyến"
-    app.session_state["active_tab"] = "Điều phối chuyến"
+    # Ban đầu tab mặc định là "Quản lý dữ liệu"
+    assert app.session_state["active_tab"] == "Quản lý dữ liệu"
+
+    # Người dùng chuyển tab bằng cách chọn "Điều phối chuyến" trên widget st.tabs (key="main_tabs")
+    app.session_state["main_tabs"] = "Điều phối chuyến"
     app.run()
     assert app.session_state["active_tab"] == "Điều phối chuyến"
 
-    # Người dùng đổi điểm trả khách (selectbox trong tab Điều phối chuyến)
+    # Người dùng tương tác với widget bên trong tab (đổi điểm trả khách)
     _pick(app, "req_dropoff", "N4")
     app.run()
 
-    # Tab đang chọn vẫn là "Điều phối chuyến", không bị reload về "Quản lý dữ liệu"
+    # Tab đang chọn vẫn là "Điều phối chuyến", không bị reset về tab đầu tiên "Quản lý dữ liệu"
     assert app.session_state["active_tab"] == "Điều phối chuyến"
+    assert app.session_state["main_tabs"] == "Điều phối chuyến"
 

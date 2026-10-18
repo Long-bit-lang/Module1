@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Framework](https://img.shields.io/badge/Streamlit-1.63%2B-FF4B4B.svg)](https://streamlit.io/)
 [![Package Manager](https://img.shields.io/badge/uv-Astral-purple.svg)](https://docs.astral.sh/uv/)
-[![Tests](https://img.shields.io/badge/pytest-118%20passed-brightgreen.svg)](https://pytest.org/)
+[![Tests](https://img.shields.io/badge/pytest-128%20passed-brightgreen.svg)](https://pytest.org/)
 
 ---
 
@@ -165,7 +165,7 @@ uv run pytest -v
 
 Kết quả kiểm thử chuẩn:
 ```text
-============================= 118 passed in 4.62s ==============================
+============================= 128 passed in 3.63s ==============================
 ```
 
 ---

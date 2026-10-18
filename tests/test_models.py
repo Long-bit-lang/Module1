@@ -251,15 +251,37 @@ class TestTrip:
         assert restored.status == trip.status
 
 
+    def test_T27b_invalid_eta_nan_inf_bool_raises(self):
+        """T27b: eta là NaN, inf hoặc boolean → ValueError."""
+        for invalid_eta in (float("nan"), float("inf"), float("-inf"), True, False):
+            with pytest.raises(ValueError):
+                Trip("T1", "R1", "D1", eta=invalid_eta)
+
+    def test_T27c_base_entity_hashable_in_set_and_dict(self, trip):
+        """T27c: BaseEntity có __hash__ hợp lệ, dùng được trong set/dict."""
+        t2 = Trip("T1", "R1", "D1", 7.0)
+        s = {trip, t2}
+        assert len(s) == 1
+        d = {trip: "active"}
+        assert d[t2] == "active"
+
+
 # ---------------------------------------------------------------------------
 # T28  Constants & __init__ exports
 # ---------------------------------------------------------------------------
 
 class TestConstants:
     def test_T28a_all_constants_importable(self):
-        """T28a: Tất cả hằng số import được từ models."""
-        # Import ở đầu file đã chứng minh; test này chạy được = pass
-        assert True
+        """T28a: Tất cả hằng số và class thực thể được export đầy đủ từ models."""
+        import models
+        required_constants = ["FREE", "BUSY", "QUEUED", "ASSIGNED", "COMPLETED"]
+        required_classes = ["BaseEntity", "Location", "Driver", "RideRequest", "Trip"]
+        for name in required_constants + required_classes:
+            assert hasattr(models, name), f"models thiếu export: {name}"
+            val = getattr(models, name)
+            assert val is not None, f"models.{name} có giá trị None"
+        if hasattr(models, "__all__"):
+            assert set(required_constants + required_classes) <= set(models.__all__)
 
     def test_T28b_constant_values_match_contract(self):
         """T28b: Giá trị hằng số đúng theo CONTRACT §1."""
@@ -271,6 +293,9 @@ class TestConstants:
 
     def test_T28c_no_core_import_in_models(self):
         """T28c: models không import từ core hay streamlit."""
+        import inspect
+        import os
+        from pathlib import Path
         import models
         import models.base_entity
         import models.location
@@ -278,19 +303,16 @@ class TestConstants:
         import models.ride_request
         import models.trip
 
-        for mod in [
+        modules = [
             models, models.base_entity, models.location,
             models.driver, models.ride_request, models.trip,
-        ]:
-            deps = vars(mod).keys()
-            assert "streamlit" not in str(deps)
-            # Kiểm tra không có tham chiếu tới core trong source
-            import inspect, os
-            try:
-                src = inspect.getfile(mod)
-                if os.path.isfile(src):
-                    content = open(src, encoding="utf-8").read()
-                    assert "from core" not in content
-                    assert "import core" not in content
-            except (TypeError, OSError):
-                pass
+        ]
+        for mod in modules:
+            src = inspect.getfile(mod)
+            assert os.path.isfile(src), f"Không tìm thấy file nguồn của {mod}"
+            content = Path(src).read_text(encoding="utf-8")
+            assert "from core" not in content, f"{mod} chứa 'from core'"
+            assert "import core" not in content, f"{mod} chứa 'import core'"
+            assert "import streamlit" not in content, f"{mod} chứa 'import streamlit'"
+            assert "from streamlit" not in content, f"{mod} chứa 'from streamlit'"
+

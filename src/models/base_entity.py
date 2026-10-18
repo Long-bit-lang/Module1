@@ -19,5 +19,8 @@ class BaseEntity(ABC):
     def __eq__(self, other: object) -> bool:
         return isinstance(other, self.__class__) and self.id == other.id
 
+    def __hash__(self) -> int:
+        return hash((self.__class__, self.id))
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(id={self.id!r})"

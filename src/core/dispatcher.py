@@ -39,12 +39,13 @@ class Dispatcher:
         drivers: dict[str, Driver],
         trips: list[Trip] | None = None,
         all_requests: dict[str, RideRequest] | None = None,
-   ) -> None:
+        locations: dict[str, Location] | None = None,
+    ) -> None:
         self.graph = graph
         self.drivers = dict(drivers)
         self.trips = list(trips) if trips is not None else []
         self.all_requests = dict(all_requests) if all_requests is not None else {}
-        self.locations: dict[str, Location] = {}
+        self.locations: dict[str, Location] = dict(locations) if locations is not None else {}
 
         self.queue = RequestQueue()
         for request in self.all_requests.values():
@@ -121,12 +122,7 @@ class Dispatcher:
     def _history_actions(self):
         """Read stack contents without modifying them (used for safe deletion)."""
         for stack in (self.undo_manager.undo_stack, self.undo_manager.redo_stack):
-            items = []
-            while len(stack):
-                items.append(stack.pop())
-            for item in reversed(items):
-                stack.push(item)
-            yield from items
+            yield from stack
 
     def dispatch_next(self, strategy: MatchStrategy) -> Trip | None:
         self.last_match_result, self.last_failure = None, None
@@ -154,7 +150,8 @@ class Dispatcher:
         # Prepare the whole transaction before changing the queue.
         driver.assign()
         removed_request = self.queue.dequeue()
-        assert removed_request is request
+        if removed_request is not request:
+            raise RuntimeError("Hàng đợi không đồng bộ với yêu cầu điều phối")
         request.status = ASSIGNED
         self.trips.append(trip)
         self.undo_manager.record(
@@ -174,8 +171,34 @@ class Dispatcher:
             trips.append(trip)
         return trips
 
-    def ride_estimate(self, request_id: str) -> tuple[float, list[str]] | None:
+    def cancel_request(self, request_id: str) -> bool:
+        """Hủy một yêu cầu đang chờ trong hàng đợi FIFO."""
         req = self.all_requests.get(request_id)
+        if req is None or req.status != QUEUED:
+            return False
+        removed = self.queue.remove(request_id)
+        if removed:
+            del self.all_requests[request_id]
+            return True
+        return False
+
+    def ride_estimate(
+        self, request_id_or_pickup: str, dropoff_node: str | None = None
+    ) -> tuple[float, list[str]] | None:
+        """Ước tính khoảng cách/thời gian và lộ trình di chuyển.
+
+        Hỗ trợ 2 cách gọi:
+        - ride_estimate(request_id): tìm theo yêu cầu đã có trong all_requests.
+        - ride_estimate(pickup_node, dropoff_node): tìm theo cặp đỉnh đón/trả trực tiếp.
+        """
+        if dropoff_node is not None:
+            pickup_node = request_id_or_pickup
+            if not self.graph.has_node(pickup_node) or not self.graph.has_node(dropoff_node):
+                return None
+            eta, path, _ = shortest_path(self.graph, pickup_node, dropoff_node)
+            return None if eta is None else (eta, path)
+
+        req = self.all_requests.get(request_id_or_pickup)
         if req is None:
             return None
         eta, path, _ = shortest_path(self.graph, req.pickup_node, req.dropoff_node)
@@ -195,11 +218,7 @@ class Dispatcher:
         return True
 
     def _peek_action(self, stack) -> DispatchAction | None:
-        if len(stack) == 0:
-            return None
-        action = stack.pop()
-        stack.push(action)
-        return action
+        return stack.peek()
 
     def can_undo(self) -> bool:
         action = self._peek_action(self.undo_manager.undo_stack)
@@ -225,7 +244,8 @@ class Dispatcher:
         if not self.can_undo():
             return False
         action = self.undo_manager.undo()
-        assert action is not None
+        if action is None:
+            raise RuntimeError("Không có thao tác nào trong undo_stack")
         self.trips = [trip for trip in self.trips if trip.id != action.trip.id]
         driver = self.drivers[action.driver_id]
         driver.release()
@@ -239,9 +259,11 @@ class Dispatcher:
         if not self.can_redo():
             return False
         action = self.undo_manager.redo()
-        assert action is not None
+        if action is None:
+            raise RuntimeError("Không có thao tác nào trong redo_stack")
         request = self.queue.dequeue()
-        assert request.id == action.request.id
+        if request.id != action.request.id:
+            raise RuntimeError(f"Yêu cầu ở đầu hàng đợi ({request.id}) không khớp với redo action ({action.request.id})")
         self.drivers[action.driver_id].assign()
         action.request.status = ASSIGNED
         self.trips.append(action.trip)

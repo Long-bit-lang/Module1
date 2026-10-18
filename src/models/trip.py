@@ -1,4 +1,4 @@
-from __future__ import annotations
+import math
 from typing import Any
 from .base_entity import BaseEntity
 
@@ -22,8 +22,8 @@ class Trip(BaseEntity):
             raise ValueError("request_id không được rỗng")
         if not driver_id or not driver_id.strip():
             raise ValueError("driver_id không được rỗng")
-        if eta < 0:
-            raise ValueError(f"eta phải >= 0, nhận: {eta}")
+        if isinstance(eta, bool) or not isinstance(eta, (int, float)) or not math.isfinite(eta) or eta < 0:
+            raise ValueError(f"eta phải là số hữu hạn >= 0, nhận: {eta}")
         if status not in _VALID_STATUSES:
             raise ValueError(f"status phải là {ASSIGNED!r} hoặc {COMPLETED!r}, nhận: {status!r}")
         self.request_id = request_id

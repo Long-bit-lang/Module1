@@ -157,6 +157,7 @@ def test_save_all_roundtrip_and_does_not_touch_seed(storage_dirs: tuple[Path, Pa
         RideRequest(id="R3", pickup_node="N3", dropoff_node="N1", status=QUEUED)
     )
     state["trips"][0].status = COMPLETED
+    state["drivers"]["D2"].status = FREE
 
     storage.save_all(state)
 
@@ -302,3 +303,96 @@ def test_trip_references_unknown_driver_or_request_raises_storage_error(
 
     with pytest.raises(StorageError):
         storage.load_all()
+
+
+# =====================================================================
+# 5. KIỂM THỬ NHẤT QUÁN TRẠNG THÁI & GHI DỞ DANG
+# =====================================================================
+
+
+def test_load_all_busy_driver_without_assigned_trip_raises_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi tài xế có status 'busy' nhưng không có trip nào 'assigned'."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    storage.load_all()
+
+    # D1 chuyển sang busy nhưng trips.json chỉ có T1 (gán cho D2)
+    bad_drivers = {
+        "drivers": [
+            {"id": "D1", "name": "Nguyễn Văn An", "node": "N1", "status": BUSY},
+            {"id": "D2", "name": "Trần Văn Bình", "node": "N2", "status": BUSY},
+        ]
+    }
+    _write_json(runtime_dir / "drivers.json", bad_drivers)
+
+    with pytest.raises(StorageError, match="không có chuyến đi đang thực hiện"):
+        storage.load_all()
+
+
+def test_load_all_assigned_request_without_trip_raises_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi yêu cầu có status 'assigned' nhưng không có trip nào trong lịch sử."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    storage.load_all()
+
+    # Thêm yêu cầu R_ORPHAN với status assigned nhưng không có trong trips.json
+    bad_requests = {
+        "requests": [
+            {"id": "R1", "pickup_node": "N1", "dropoff_node": "N2", "status": ASSIGNED},
+            {"id": "R2", "pickup_node": "N2", "dropoff_node": "N3", "status": QUEUED},
+            {"id": "R_ORPHAN", "pickup_node": "N1", "dropoff_node": "N3", "status": ASSIGNED},
+        ]
+    }
+    _write_json(runtime_dir / "requests.json", bad_requests)
+
+    with pytest.raises(StorageError, match="không tìm thấy chuyến đi nào"):
+        storage.load_all()
+
+
+def test_load_all_duplicate_driver_in_active_trips_raises_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi 2 chuyến đi đang chạy cùng gán cho một tài xế."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    storage.load_all()
+
+    bad_trips = {
+        "trips": [
+            {"id": "T1", "request_id": "R1", "driver_id": "D2", "eta": 4.0, "status": ASSIGNED},
+            {"id": "T2", "request_id": "R2", "driver_id": "D2", "eta": 8.0, "status": ASSIGNED},
+        ]
+    }
+    _write_json(runtime_dir / "trips.json", bad_trips)
+
+    with pytest.raises(StorageError, match="nhiều hơn một chuyến đi"):
+        storage.load_all()
+
+
+def test_save_all_interrupted_write_cleans_up_tmp_and_preserves_targets(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Khi quá trình serialize hoặc ghi lỗi giữa chừng, toàn bộ file .tmp được dọn sạch và file gốc nguyên vẹn."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    state = storage.load_all()
+
+    # Ghi nhận nội dung 4 file JSON trước khi gọi save_all
+    content_before = {f: (runtime_dir / f).read_text(encoding="utf-8") for f in JsonStorage.REQUIRED_FILES}
+
+    # Tạo một đối tượng không thể serialize JSON trong trips (gây lỗi khi ghi trips.json)
+    state["trips"].append({"invalid": object()})
+
+    with pytest.raises(StorageError):
+        storage.save_all(state)
+
+    # Đảm bảo không có file .tmp nào bị bỏ sót
+    assert list(runtime_dir.glob("*.tmp")) == []
+
+    # Nội dung 4 file chính thức vẫn nguyên vẹn
+    content_after = {f: (runtime_dir / f).read_text(encoding="utf-8") for f in JsonStorage.REQUIRED_FILES}
+    assert content_before == content_after
