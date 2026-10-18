@@ -46,7 +46,7 @@ class RoadGraph:
         return list(self._adj.get(u, ()))
 
     def reversed(self) -> "RoadGraph":
-        """Đồ thị đảo chiều cạnh (dùng cho A2), có cơ chế cache để tối ưu hiệu năng."""
+        """Đồ thị đảo chiều cạnh (dùng cho A2), có cơ chế cache để tái sử dụng giữa các lần gọi liên tiếp (tự hủy cache khi thêm đỉnh/cạnh)."""
         if self._reversed_cache is not None:
             return self._reversed_cache
         reverse_graph = RoadGraph()

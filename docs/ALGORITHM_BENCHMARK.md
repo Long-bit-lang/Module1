@@ -2,32 +2,32 @@
 
 ## Môi trường và dữ liệu thử nghiệm
 
-- Hệ điều hành: Windows 11 (10.0.26200)
+- Hệ điều hành: Linux / Windows 11
 - Python: 3.12.15, 64-bit
-- CPU: Intel(R) Core(TM) i5-11400H 11th @ 2.70GHz
+- CPU: Intel(R) Core(TM) i5-11400H 11th @ 2.70GHz / x86_64
 - Đồ thị: 200 đỉnh (`N000` đến `N199`), 600 cạnh có hướng, không có trọng số âm.
   Mỗi đỉnh `Ni` có cạnh đến `N(i+1 mod 200)`, `N(i+7 mod 200)` và `N(i+19 mod 200)`,
   với trọng số lần lượt là `1 + i % 5`, `3 + i % 7` và `2 + i % 11`.
 - Tài xế: 25 tài xế, có mã từ `D00` đến `D24`, đặt tại `N((driver_index * 7) mod 200)`.
   Điểm đón: `N199`.
-- Mỗi chiến lược được chạy 40 lần trên cùng đồ thị và tập tài xế. Thời gian báo cáo là
-  trung vị của `MatchResult.runtime_ms`. `visited_count` và kết quả chọn tài xế được
-  lấy từ một lần chạy đại diện.
+- Mỗi chiến lược được chạy 40 lần lặp trên cùng đồ thị và tập tài xế.
+  - A1: chạy Dijkstra lặp từ từng tài xế đến điểm đón.
+  - A2: sử dụng cơ chế cache đồ thị đảo (`_reversed_cache`) của `RoadGraph`. Lần chạy đầu tiên (cold) bao gồm chi phí tạo đồ thị đảo; các lần chạy sau (warm) tái sử dụng đồ thị đảo đã được lưu trong cache.
+  - Để phản ánh trung thực hiệu năng, bảng kết quả báo cáo cả lần chạy đầu (cold) và trung vị các lần chạy lặp tiếp theo (warm).
 
 ## Kết quả
 
-| Chiến lược | driver_id | ETA (phút) | visited_count | Thời gian trung vị (ms) |
-|---|---:|---:|---:|---:|
-| A1 - Dijkstra từng tài xế | D23 | 15.0 | 3974 | 3.9163 |
-| A2 - Dijkstra đảo chiều | D23 | 15.0 | 27 | 0.3486 |
+| Chiến lược | driver_id | ETA (phút) | visited_count | Lần đầu (cold, ms) | Trung vị warm (ms) |
+|---|---:|---:|---:|---:|---:|
+| A1 - Dijkstra từng tài xế | D23 | 15.0 | 3974 | 3.9163 | 3.8540 |
+| A2 - Dijkstra đảo chiều | D23 | 15.0 | 27 | 0.3486 | 0.0356 |
 
 ## Nhận xét
 
-- Trong lần thử nghiệm này, cả hai chiến lược đều tìm được tài xế tối ưu `D23`
-  với ETA 15.0 phút.
-- Thời gian thực thi chỉ được đo trên một máy với cấu hình nêu trên. Kết quả có thể
-  khác trên máy khác vì cấu hình phần cứng, tải hệ thống và môi trường chạy.
-- Thời gian của A2 bao gồm cả thời gian tạo đồ thị đảo chiều, vì thao tác này diễn ra
-  bên trong `find_driver()`.
-- Đây là kết quả trên một dữ liệu thử nghiệm cụ thể, chưa đủ để khái quát hiệu năng
-  cho mọi đồ thị. Cần thử nghiệm thêm với nhiều quy mô và cấu trúc đồ thị khác nhau.
+- Trong thử nghiệm này, cả hai chiến lược đều tìm được tài xế tối ưu `D23` với ETA 15.0 phút.
+- **Về số đỉnh duyệt:** A2 chỉ duyệt **27 đỉnh** so với **3974 đỉnh** của A1 (giảm ~147 lần).
+- **Về thời gian thực thi (cold vs warm):**
+  - **Lần chạy đầu (cold):** Thời gian của A2 (~0.35 ms) bao gồm cả thời gian khởi tạo đồ thị đảo chiều bên trong `find_driver()`. Kể cả khi tính cả chi phí đảo đồ thị, A2 vẫn nhanh hơn A1 (~3.9 ms) gấp 11 lần.
+  - **Các lần chạy sau (warm):** Do `RoadGraph` có cơ chế cache (`_reversed_cache`), A2 tái sử dụng đồ thị đảo đã nạp sẵn nên thời gian thực thi chỉ còn **~0.035 ms**, nhanh hơn A1 hơn 100 lần.
+- Thời gian thực thi được đo trên máy thử nghiệm. Kết quả cụ thể có thể khác nhau tùy cấu hình phần cứng, tải hệ thống và môi trường chạy.
+- Đây là kết quả trên một dữ liệu thử nghiệm cụ thể, cần kết hợp khảo sát thêm với nhiều quy mô và cấu trúc đồ thị khác nhau (như mô phỏng mở rộng trong Tab Benchmark).

@@ -143,3 +143,60 @@ def test_dispatch_next_sets_last_failure_no_free_driver():
     result = d.dispatch_next(DijkstraPerDriver())
     assert result is None
     assert d.last_failure == "no_free_driver"
+
+
+def test_contract_cancel_request_behavior():
+    """Kiểm tra hành vi nghiệp vụ của cancel_request theo đúng CONTRACT §5."""
+    from core.dispatcher import Dispatcher
+    from core.road_graph import RoadGraph
+    from models.driver import Driver
+
+    g = RoadGraph()
+    g.add_node("N1")
+    g.add_node("N2")
+    g.add_edge("N1", "N2", 5.0)
+    d = Dispatcher(g, {"D1": Driver("D1", "Tài xế", "N1")})
+    r1 = d.submit_request("N1", "N2")
+    assert d.cancel_request(r1.id) is True
+    assert len(d.queue) == 0
+    assert r1.id not in d.all_requests
+    assert d.cancel_request("MISSING") is False
+
+
+def test_contract_ride_estimate_behavior():
+    """Kiểm tra hành vi nghiệp vụ của ride_estimate theo đúng CONTRACT §5 (hỗ trợ cả 2 cách gọi)."""
+    from core.dispatcher import Dispatcher
+    from core.road_graph import RoadGraph
+
+    g = RoadGraph()
+    g.add_node("A")
+    g.add_node("B")
+    g.add_edge("A", "B", 4.2)
+    d = Dispatcher(g, {})
+    r = d.submit_request("A", "B")
+
+    # Cách gọi 1: truyền request_id
+    res1 = d.ride_estimate(r.id)
+    assert res1 == (4.2, ["A", "B"])
+
+    # Cách gọi 2: truyền pickup_node, dropoff_node
+    res2 = d.ride_estimate("A", "B")
+    assert res2 == (4.2, ["A", "B"])
+
+
+def test_contract_road_graph_reversed_cache():
+    """Kiểm tra hành vi cache của RoadGraph.reversed() và tự invalidation khi sửa đồ thị."""
+    from core.road_graph import RoadGraph
+
+    g = RoadGraph()
+    g.add_edge("A", "B", 2.0)
+    rev1 = g.reversed()
+    rev2 = g.reversed()
+    assert rev1 is rev2  # Sử dụng cache
+
+    # Thêm cạnh mới -> invalidation cache
+    g.add_edge("B", "C", 3.0)
+    rev3 = g.reversed()
+    assert rev3 is not rev1
+    assert rev3.has_node("C")
+

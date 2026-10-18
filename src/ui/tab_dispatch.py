@@ -1,6 +1,8 @@
 """TV5 - Tab "Điều phối chuyến": yêu cầu, hàng đợi FIFO, điều phối, Undo/Redo, quản lý chuyến."""
 from __future__ import annotations
 
+import html
+
 import pandas as pd
 import streamlit as st
 
@@ -136,7 +138,7 @@ def _render_last_result() -> None:
 
         if res.path:
             path_str = " &nbsp;➔&nbsp; ".join(
-                f'<span class="route-node">{S.node_label(n)}</span>' for n in res.path
+                f'<span class="route-node">{html.escape(S.node_label(n))}</span>' for n in res.path
             )
             st.markdown(
                 f"""

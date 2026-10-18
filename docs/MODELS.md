@@ -36,6 +36,7 @@ Mọi entity kế thừa `BaseEntity`, đảm bảo có `id` ổn định và kh
 | `to_dict()` | `() -> dict[str, Any]` | **Abstract** — chuyển entity thành dict để ghi JSON |
 | `from_dict()` | `(cls, data: dict) -> BaseEntity` | **Abstract classmethod** — khôi phục entity từ dict |
 | `__eq__()` | `(other: object) -> bool` | So sánh bằng nhau theo `id` và kiểu lớp |
+| `__hash__()` | `() -> int` | Băm theo `(self.__class__, self.id)` để hỗ trợ dùng entity trong `set`/`dict` |
 | `__repr__()` | `() -> str` | Chuỗi debug dạng `ClassName(id='...')` |
 
 ### Ràng buộc
@@ -158,9 +159,20 @@ Khớp phần tử trong mảng `drivers` của `drivers.json`.
 ### Sơ đồ chuyển trạng thái
 
 ```
-QUEUED ──► ASSIGNED
-     (do Dispatcher)
+               submit_request()
+                     │
+                     ▼
+          ┌──────► QUEUED ──────────────┐
+          │          │                  │
+   undo() │          │ dispatch_next()  │ cancel_request()
+          │          ▼                  ▼
+          └────── ASSIGNED          [Hủy / Đã xóa]
 ```
+
+- **Khởi tạo**: Yêu cầu được tạo với trạng thái `QUEUED` và đưa vào hàng đợi FIFO.
+- **Ghép chuyến (`dispatch_next`)**: Chuyển từ `QUEUED` sang `ASSIGNED` khi tìm được tài xế phù hợp.
+- **Hoàn tác (`undo`)**: Đưa yêu cầu từ `ASSIGNED` trở về `QUEUED` và đặt lại đầu hàng đợi FIFO.
+- **Hủy yêu cầu (`cancel_request`)**: Hủy và xóa hoàn toàn yêu cầu khỏi hàng đợi và hệ thống khi vẫn đang ở `QUEUED`.
 
 ### Schema `to_dict()`
 
@@ -200,7 +212,7 @@ Khớp phần tử trong mảng `requests` của `requests.json`.
 | `id` | `str` | — | Mã chuyến đi (ví dụ: `"T1"`) |
 | `request_id` | `str` | — | Mã yêu cầu đặt xe tương ứng |
 | `driver_id` | `str` | — | Mã tài xế được gán |
-| `eta` | `float` | — | Thời gian dự kiến đón (phút, phải ≥ 0) |
+| `eta` | `float` | — | Thời gian dự kiến đón (phút, số thực hữu hạn ≥ 0) |
 | `status` | `str` | `ASSIGNED` | Trạng thái — chỉ nhận `ASSIGNED` hoặc `COMPLETED` |
 
 ### Sơ đồ chuyển trạng thái
@@ -225,7 +237,7 @@ Khớp phần tử trong mảng `trips` của `trips.json`.
 | `id` | Không rỗng | `ValueError` |
 | `request_id` | Không rỗng | `ValueError` |
 | `driver_id` | Không rỗng | `ValueError` |
-| `eta` | Phải ≥ 0 | `ValueError` |
+| `eta` | Phải là số thực hữu hạn ≥ 0 (`math.isfinite(eta)`, không nhận `bool`, `inf`, `nan`) | `ValueError` |
 | `status` khi khởi tạo | Phải là `ASSIGNED` hoặc `COMPLETED` | `ValueError` |
 
 ---

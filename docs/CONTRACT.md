@@ -36,7 +36,7 @@
   - `nodes() -> list[str]`: Trả về danh sách tất cả các mã đỉnh hiện có.
   - `edges() -> list[tuple[str, str, float]]`: Trả về danh sách các cạnh `(u, v, weight)` để `JsonStorage` xuất file `graph.json` mà không cần truy cập biến private `_adj`.
   - `neighbors(u: str) -> list[tuple[str, float]]`: Trả về danh sách láng giềng `(v, weight)` kề sau đỉnh `u`.
-  - `reversed() -> RoadGraph`: Trả về một `RoadGraph` mới với tất cả các cạnh được đảo ngược hướng (dùng cho thuật toán A2).
+  - `reversed() -> RoadGraph`: Trả về đồ thị đảo chiều các cạnh (dùng cho thuật toán A2). Có cơ chế cache nội bộ (`_reversed_cache`) để tái sử dụng giữa các lần gọi liên tiếp, tự động vô hiệu hóa (invalidation) khi đồ thị bị thay đổi qua `add_node()` hoặc `add_edge()`.
 
 ---
 
@@ -73,10 +73,14 @@
   - `enqueue(request: RideRequest) -> None`: Thêm yêu cầu vào cuối hàng đợi.
   - `dequeue() -> RideRequest`: Lấy và xóa yêu cầu ở đầu hàng đợi.
   - `peek() -> RideRequest | None`: Xem yêu cầu ở đầu hàng đợi mà không xóa.
+  - `remove(request_id: str) -> bool`: Tìm và xóa yêu cầu theo ID khỏi hàng đợi (dùng khi khách hủy yêu cầu); cập nhật chính xác con trỏ `_head`, `_tail` và `_size`; trả về `True` nếu xóa thành công, `False` nếu không tìm thấy.
   - `requeue_head(request: RideRequest) -> None`: Đưa yêu cầu trở lại **vị trí đầu hàng đợi** (phục vụ thao tác Undo).
   - `__len__() -> int`: Trả về số lượng yêu cầu trong hàng đợi.
+  - `__iter__() -> Iterator[RideRequest]`: Duyệt tuần tự các yêu cầu trong hàng đợi từ đầu đến cuối mà không làm thay đổi trạng thái.
 - **`Stack` (Ngăn xếp LIFO)**:
   - `push(item: Any) -> None`, `pop() -> Any`, `clear() -> None`, `__len__() -> int`.
+  - `peek() -> Any | None`: Xem phần tử ở đỉnh ngăn xếp mà không lấy ra (`None` nếu rỗng).
+  - `__iter__() -> Iterator[Any]`: Duyệt các phần tử trong ngăn xếp từ đỉnh xuống đáy mà không làm thay đổi trạng thái (phục vụ kiểm tra an toàn tham chiếu khi xóa tài xế).
 - **`UndoManager`**:
   - Quản lý hai ngăn xếp: `undo_stack` và `redo_stack`.
   - Định nghĩa action dataclass:
@@ -106,6 +110,7 @@
     - `last_failure: str | None`: Mã nguyên nhân thất bại nếu lần điều phối gần nhất không thành công (`"empty_queue"`, `"no_free_driver"`, `"no_route"`, hoặc `None` nếu thành công).
   - **Quản lý yêu cầu**:
     - `submit_request(pickup_node: str, dropoff_node: str) -> RideRequest`: Tự động sinh ID theo quy tắc `R` + số thứ tự tăng dần. Kiểm tra tính hợp lệ của `pickup_node` và `dropoff_node` bằng `graph.has_node()`. Kiểm tra `pickup_node != dropoff_node` và kiểm tra tồn tại đường đi từ điểm đón đến điểm trả bằng thuật toán tìm đường ngắn nhất; ném `ValueError` kèm thông báo tiếng Việt nếu đỉnh không tồn tại, trùng nhau hoặc không có đường đi. Đặt trạng thái `QUEUED`, thêm vào `all_requests` và `queue.enqueue()`.
+    - `cancel_request(request_id: str) -> bool`: Hủy một yêu cầu đang ở trạng thái `QUEUED`. Xóa khỏi hàng đợi `RequestQueue` và từ điển `all_requests`. Trả về `True` nếu hủy thành công, `False` nếu không tìm thấy hoặc yêu cầu đã được điều phối (`ASSIGNED`).
   - **Quản lý tài xế**:
     - `add_driver(name: str, node: str) -> Driver`: Tự sinh ID `D` + số, kiểm tra `node`, tạo và lưu Driver. Tên tài xế được chuẩn hóa qua `strip()`.
     - `update_driver(driver_id: str, name: str | None = None, node: str | None = None) -> Driver`: Cập nhật thông tin tài xế. Không cho phép đổi vị trí nếu tài xế đang `BUSY`. Tên tài xế được chuẩn hóa qua `strip()`.
@@ -113,7 +118,7 @@
   - **Điều phối chuyến**:
     - `dispatch_next(strategy: MatchStrategy) -> Trip | None`: Lấy yêu cầu ở đầu hàng đợi (`peek()`). Nếu không có yêu cầu, không có tài xế rảnh, hoặc không có đường đi đến điểm đón: ghi nhận mã lý do thất bại vào `self.last_failure` (`"empty_queue"`, `"no_free_driver"`, `"no_route"`), đặt `self.last_match_result = None`, trả về `None` và giữ nguyên yêu cầu ở đầu hàng đợi. Nếu thành công: dequeue request, chuyển request sang `ASSIGNED`, chuyển driver sang `BUSY`, tạo `Trip` mới (ID tự sinh `T` + số), lưu kết quả thuật toán vào `self.last_match_result: MatchResult`, đặt `self.last_failure = None`, ghi nhận vào `UndoManager` và trả về `Trip`.
     - `dispatch_all(strategy: MatchStrategy) -> list[Trip]`: Điều phối liên tục các yêu cầu trong hàng đợi cho đến khi hàng đợi rỗng hoặc không thể ghép thêm chuyến nào. Trả về danh sách các `Trip` được tạo.
-    - `ride_estimate(pickup_node: str, dropoff_node: str) -> tuple[float, list[str]] | None`: Tính khoảng cách/thời gian và lộ trình di chuyển từ điểm đón đến điểm trả khách bằng thuật toán tìm đường ngắn nhất. Trả về `(quang_duong, danh_sach_dinh)` hoặc `None` nếu không có đường đi.
+    - `ride_estimate(request_id_or_pickup: str, dropoff_node: str | None = None) -> tuple[float, list[str]] | None`: Tính khoảng cách/thời gian và lộ trình di chuyển từ điểm đón đến điểm trả khách bằng thuật toán tìm đường ngắn nhất. Hỗ trợ 2 cách gọi: truyền `request_id` (tra cứu điểm đón/trả từ yêu cầu đã lưu) hoặc truyền trực tiếp cặp `(pickup_node, dropoff_node)`. Trả về `(quang_duong, danh_sach_dinh)` hoặc `None` nếu không có đường đi.
   - **Vòng đời tài xế & Hoàn thành chuyến**:
     - `complete_trip(trip_id: str) -> bool`: Tìm chuyến đi tương ứng, đổi `Trip.status` sang `COMPLETED`, gọi `driver.release()` để chuyển tài xế về `FREE`, cập nhật vị trí tài xế về `dropoff_node` của chuyến, đồng thời xóa toàn bộ lịch sử Undo/Redo (`undo_stack.clear()`, `redo_stack.clear()`).
   - **Hoàn tác & Làm lại**:

@@ -126,3 +126,20 @@ def test_tab_selection_persists_on_widget_interaction(app):
     assert app.session_state["active_tab"] == "Điều phối chuyến"
     assert app.session_state["main_tabs"] == "Điều phối chuyến"
 
+
+def test_reset_to_seed_restores_data(real_app, tmp_path):
+    assert not real_app.exception
+    # 1. Điều phối một chuyến để làm thay đổi dữ liệu runtime trên đĩa
+    real_app.button(key="btn_dispatch").click().run()
+    assert '"T3"' in (tmp_path / "trips.json").read_text(encoding="utf-8")
+
+    # 2. Nhấn nút Reset về dữ liệu mẫu (Seed)
+    real_app.button(key="btn_reset_seed").click().run()
+    assert not real_app.exception
+
+    # 3. File trips.json trên đĩa runtime được phục hồi về nguyên bản (chỉ có T1, T2 từ seed, không còn T3)
+    content_trips = (tmp_path / "trips.json").read_text(encoding="utf-8")
+    assert '"T3"' not in content_trips
+    assert len(_d(real_app).trips_snapshot()) == 2
+
+

@@ -9,10 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from core.road_graph import RoadGraph
-from models.driver import Driver
-from models.location import Location
-from models.ride_request import RideRequest
-from models.trip import Trip
+from models import ASSIGNED, BUSY, FREE, QUEUED, Driver, Location, RideRequest, Trip
 
 _ROOT = Path(__file__).resolve().parents[2]
 
@@ -247,7 +244,7 @@ class JsonStorage:
             trips.append(trip)
 
         # 6. Kiểm tra tính nhất quán trạng thái nghiệp vụ giữa Drivers, Requests và Trips
-        active_trips = [t for t in trips if t.status == "assigned"]
+        active_trips = [t for t in trips if t.status == ASSIGNED]
         active_driver_ids: set[str] = set()
         active_request_ids: set[str] = set()
 
@@ -264,22 +261,22 @@ class JsonStorage:
             active_request_ids.add(t.request_id)
 
         for driver in drivers.values():
-            if driver.status == "busy" and driver.id not in active_driver_ids:
+            if driver.status == BUSY and driver.id not in active_driver_ids:
                 raise StorageError(
-                    f"Tài xế '{driver.id}' có trạng thái '{driver.status}' nhưng không có chuyến đi đang thực hiện (assigned)."
+                    f"Tài xế '{driver.id}' có trạng thái '{driver.status}' nhưng không có chuyến đi đang thực hiện ({ASSIGNED})."
                 )
-            if driver.status == "free" and driver.id in active_driver_ids:
+            if driver.status == FREE and driver.id in active_driver_ids:
                 raise StorageError(
                     f"Tài xế '{driver.id}' có trạng thái '{driver.status}' nhưng đang được gán cho chuyến đi chưa hoàn thành."
                 )
 
         all_trip_request_ids = {t.request_id for t in trips}
         for req in requests:
-            if req.status == "assigned" and req.id not in all_trip_request_ids:
+            if req.status == ASSIGNED and req.id not in all_trip_request_ids:
                 raise StorageError(
                     f"Yêu cầu '{req.id}' có trạng thái '{req.status}' nhưng không tìm thấy chuyến đi nào trong lịch sử chuyến."
                 )
-            if req.status == "queued" and req.id in active_request_ids:
+            if req.status == QUEUED and req.id in active_request_ids:
                 raise StorageError(
                     f"Yêu cầu '{req.id}' có trạng thái '{req.status}' nhưng đang được gán cho một chuyến đi chưa hoàn thành."
                 )
@@ -366,7 +363,7 @@ class JsonStorage:
 
             for tmp_path, target_path in written_tmp_files:
                 os.replace(tmp_path, target_path)
-        except (AttributeError, KeyError, OSError, TypeError, ValueError) as exc:
+        except (StorageError, AttributeError, KeyError, OSError, TypeError, ValueError) as exc:
             for tmp_path, _ in written_tmp_files:
                 if tmp_path.exists():
                     try:

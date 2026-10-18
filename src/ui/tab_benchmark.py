@@ -351,6 +351,7 @@ def render() -> None:
             f"ℹ️ **Ghi chú phân tích & Giải thích kết quả:**\n"
             f"- **Quy mô đồ thị mẫu:** Mạng lưới seed hiện hành chỉ có {len(d.graph.nodes())} đỉnh và {free} xe rảnh ($k={free}$). "
             f"Thời gian chạy của cả hai giải thuật đều rất nhỏ (tối đa ~{max_measured_t:.3f} ms), do đó ở Thử nghiệm 1, A2 chưa tạo ra sự cách biệt lớn so với A1.\n"
+            f"- **Trạng thái warm:** A2 sử dụng cơ chế cache đồ thị đảo của `RoadGraph`, số đo lặp lại phản ánh thời gian thực thi ở trạng thái warm (đồ thị đảo đã nạp sẵn trong bộ nhớ).\n"
             f"- **Tính công bằng thuật toán:** Bản cài đặt A1 hiện chạy Dijkstra từng xe rảnh cho đến khi tìm được điểm đón (chưa áp dụng cắt tỉa dựa trên `best_eta`), "
             f"còn A2 chạy Dijkstra từ điểm đón trên đồ thị đảo và dừng sớm ngay khi đỉnh đầu tiên trong min-heap vượt quá `best_eta`. "
             f"Lợi thế vượt trội của A2 chỉ thể hiện rõ rệt khi số lượng tài xế rảnh $k$ lớn (xem Thử nghiệm 2 bên dưới)."
@@ -362,7 +363,8 @@ def render() -> None:
     st.markdown("### 🚀 Thử nghiệm 2: Minh chứng Vượt trội khi Mở rộng Quy mô (Scalability)")
     st.markdown(
         "Khi mạng lưới có hàng chục hoặc hàng trăm tài xế rảnh ($k \\gg 1$), A1 phải chạy $k$ lượt Dijkstra khiến "
-        "thời gian tính toán tăng tuyến tính $O(k)$, trong khi A2 chỉ chạy 1 lượt duy nhất $O(1)$ theo $k$."
+        "thời gian tính toán tăng tuyến tính $O(k)$ theo số tài xế rảnh, trong khi A2 chỉ chạy 1 lượt duy nhất từ điểm đón "
+        "trên đồ thị đảo nên không bị phụ thuộc tuyến tính vào $k$ (thậm chí dừng sớm hơn khi $k$ tăng)."
     )
 
     choice_scale = st.radio(
@@ -375,7 +377,8 @@ def render() -> None:
     if choice_scale == "Ca thử nghiệm chuẩn (200 đỉnh, 25 tài xế)":
         st.markdown(
             "Ca thử nghiệm chuẩn từ báo cáo kỹ thuật [ALGORITHM_BENCHMARK.md](docs/ALGORITHM_BENCHMARK.md): "
-            "**200 đỉnh**, **600 cung đường**, **25 tài xế rảnh**, điểm đón `N199`."
+            "**200 đỉnh**, **600 cung đường**, **25 tài xế rảnh**, điểm đón `N199`. "
+            "*(Số đo phản ánh trạng thái warm khi đồ thị đảo đã được nạp)*."
         )
         if st.button("Chạy ca kiểm thử 200 đỉnh chuẩn", key="btn_run_doc_bench", type="primary"):
             with st.spinner("Đang chạy đối chuẩn trên đồ thị 200 đỉnh và 25 tài xế..."):
@@ -397,15 +400,27 @@ def render() -> None:
 
             d1, d2 = st.columns(2)
             with d1:
-                st.success(
-                    f"🏆 **Giảm số đỉnh duyệt:** A2 chỉ duyệt **{r2['Số đỉnh đã duyệt']}** đỉnh so với "
-                    f"**{r1['Số đỉnh đã duyệt']:,}** đỉnh của A1 (**giảm {ratio_v:.1f} lần** — tiết kiệm {pct_saved:.1f}% số đỉnh duyệt)!"
-                )
+                if r2["Số đỉnh đã duyệt"] < r1["Số đỉnh đã duyệt"]:
+                    st.success(
+                        f"🏆 **Giảm số đỉnh duyệt:** A2 chỉ duyệt **{r2['Số đỉnh đã duyệt']}** đỉnh so với "
+                        f"**{r1['Số đỉnh đã duyệt']:,}** đỉnh của A1 (**giảm {ratio_v:.1f} lần** — tiết kiệm {pct_saved:.1f}% số đỉnh duyệt)!"
+                    )
+                else:
+                    st.info(
+                        f"📊 **Số đỉnh đã duyệt:** A2 duyệt **{r2['Số đỉnh đã duyệt']}** đỉnh so với "
+                        f"**{r1['Số đỉnh đã duyệt']:,}** đỉnh của A1."
+                    )
             with d2:
-                st.success(
-                    f"⚡ **Tăng tốc xử lý:** A2 chạy trong **{r2['Runtime trung vị (ms)']:.3f} ms** so với "
-                    f"**{r1['Runtime trung vị (ms)']:.3f} ms** của A1 (**nhanh hơn ~{ratio_t:.1f} lần**), cùng chọn tài xế `{r2['Tài xế chọn']}`."
-                )
+                if ratio_t > 1.05:
+                    st.success(
+                        f"⚡ **Tăng tốc xử lý:** A2 chạy trong **{r2['Runtime trung vị (ms)']:.3f} ms** (warm) so với "
+                        f"**{r1['Runtime trung vị (ms)']:.3f} ms** của A1 (**nhanh hơn ~{ratio_t:.1f} lần**), cùng chọn tài xế `{r2['Tài xế chọn']}`."
+                    )
+                else:
+                    st.info(
+                        f"⏱️ **Thời gian xử lý:** A2 chạy trong **{r2['Runtime trung vị (ms)']:.3f} ms** (warm), A1 chạy trong "
+                        f"**{r1['Runtime trung vị (ms)']:.3f} ms**, cùng chọn tài xế `{r2['Tài xế chọn']}`."
+                    )
 
     else:
         st.markdown(
@@ -424,13 +439,13 @@ def render() -> None:
                     st.markdown("**Số đỉnh duyệt qua Min-Heap theo số tài xế rảnh ($k$)**")
                     piv_nodes = sc.pivot(index="Số tài xế rảnh", columns="Thuật toán", values="Số đỉnh đã thăm")
                     st.line_chart(piv_nodes)
-                    st.caption("📈 **Nhận xét:** Đường A1 dốc đứng tuyến tính $O(k)$, trong khi đường A2 nằm ngang phẳng $O(1)$!")
+                    st.caption("📈 **Nhận xét:** Đường A1 tăng tuyến tính theo số tài xế rảnh $k$, trong khi A2 không phụ thuộc tuyến tính vào $k$ (thậm chí có xu hướng giảm khi $k$ lớn do thuật toán gặp tài xế gần và dừng sớm hơn).")
             with c_sc2:
                 with st.container(border=True):
                     st.markdown("**Thời gian chạy trung vị (ms) theo số tài xế rảnh ($k$)**")
                     piv_time = sc.pivot(index="Số tài xế rảnh", columns="Thuật toán", values="Runtime trung vị (ms)")
                     st.line_chart(piv_time)
-                    st.caption("⚡ **Nhận xét:** Thời gian chạy của A2 ổn định ở mức thấp bất kể có bao nhiêu tài xế rảnh.")
+                    st.caption("⚡ **Nhận xét:** Thời gian chạy của A2 duy trì ở mức thấp và không bị tăng tuyến tính theo số lượng tài xế rảnh $k$ như A1.")
 
     st.divider()
 
@@ -441,7 +456,7 @@ def render() -> None:
             "1. **Tính tương đương nghiệp vụ:** Cả A1 và A2 đều tuân thủ chặt chẽ nguyên tắc tối ưu ETA và tie-breaking, "
             "đảm bảo khách hàng luôn nhận được cuốc xe nhanh nhất và tài xế chính xác.\n"
             "2. **Điểm bùng phát hiệu năng:** Khi $k \\le 2$, A1 có thời gian tương đương do không tốn chi phí đảo đồ thị. "
-            "Tuy nhiên khi $k \\ge 5$, **A2 hoàn toàn áp đảo về số phép toán và thời gian tính toán**.\n"
+            "Tuy nhiên trong các thử nghiệm của nhóm khi $k \\ge 5$, **A2 thể hiện ưu thế vượt trội về số phép toán và thời gian tính toán**.\n"
             "3. **Ứng dụng thực tế:** Trong các hệ thống điều phối xe công nghệ quy mô thành phố lớn (hàng nghìn tài xế rảnh), "
-            "**A2 (Dijkstra đảo chiều)** là giải pháp tối ưu bắt buộc nhằm giảm tải CPU cho server và phản hồi người dùng tức thì."
+            "**A2 (Dijkstra đảo chiều)** là giải pháp được nhóm khuyến nghị nhằm giảm tải CPU cho server và phản hồi người dùng tức thì."
         )

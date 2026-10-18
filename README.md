@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Framework](https://img.shields.io/badge/Streamlit-1.63%2B-FF4B4B.svg)](https://streamlit.io/)
 [![Package Manager](https://img.shields.io/badge/uv-Astral-purple.svg)](https://docs.astral.sh/uv/)
-[![Tests](https://img.shields.io/badge/pytest-128%20passed-brightgreen.svg)](https://pytest.org/)
+[![Tests](https://img.shields.io/badge/pytest-136%20passed-brightgreen.svg)](https://pytest.org/)
 
 ---
 
@@ -95,7 +95,7 @@ Module1/
 - Tự động làm mới ngăn xếp khi có thao tác làm biến đổi trạng thái (như hoàn thành chuyến xe).
 
 ### 💾 Lưu trữ dữ liệu an toàn (Atomic JSON Storage)
-- Quá trình ghi dữ liệu áp dụng cơ chế **Atomic Replacement**: ghi vào file tạm `.tmp` sau đó dùng thao tác `os.replace` để tránh mất mát hoặc hỏng file JSON khi chương trình bị dừng đột ngột.
+- Quá trình ghi dữ liệu áp dụng cơ chế **atomic từng file, giảm rủi ro bất nhất quán giữa các file**: toàn bộ 4 file được chuẩn bị và flush/fsync vào file tạm `.tmp` trước khi hoán đổi nguyên tử (`os.replace`) sang file chính thức nhằm giảm thiểu tối đa rủi ro mất mát hoặc hỏng file JSON nếu chương trình bị ngắt đột ngột.
 - Tự động tách biệt thư mục gốc `data/seed/` và thư mục hoạt động `data/runtime/`.
 
 ---
@@ -165,7 +165,7 @@ uv run pytest -v
 
 Kết quả kiểm thử chuẩn:
 ```text
-============================= 128 passed in 3.63s ==============================
+============================= 136 passed in 4.03s ==============================
 ```
 
 ---
@@ -177,9 +177,11 @@ Kết quả kiểm thử chuẩn:
 1. **Kiểm tra dữ liệu mạng lưới (Tab "Quản lý dữ liệu")**:
    - Quan sát bản đồ đồ thị và vị trí các tài xế rảnh (đỉnh viền xanh).
    - Điền form để thêm một tài xế mới tại một đỉnh bất kỳ (ví dụ: `N2 - Bến xe Trung tâm`).
+   - Nút **🌱 Reset về dữ liệu mẫu (Seed)**: Cho phép khôi phục toàn bộ trạng thái hệ thống từ thư mục mẫu ban đầu (`data/seed/`) bất kỳ lúc nào để bắt đầu lại kịch bản sạch sẽ.
 2. **Tạo yêu cầu đặt xe (Tab "Điều phối chuyến")**:
    - Chọn điểm đón (`N3 - Cầu Rồng`) và điểm trả (`N6 - Chợ Hàn`).
    - Nhấn **Gửi yêu cầu**. Yêu cầu xuất hiện ngay trong danh sách Hàng đợi FIFO.
+   - Nút **Hủy yêu cầu**: Cho phép khách hàng hủy một yêu cầu đang chờ (`QUEUED`) ra khỏi hàng đợi FIFO nếu thay đổi ý định.
 3. **Thực hiện điều phối**:
    - Chọn thuật toán **A2 (Dijkstra đảo chiều)**.
    - Nhấn **Ghép chuyến** (hoặc **Ghép tất cả**). Hệ thống tự động chọn tài xế rảnh gần nhất, hiển thị thẻ kết quả với ETA, số đỉnh duyệt và chuỗi breadcrumb lộ trình.

@@ -375,8 +375,9 @@ def test_load_all_duplicate_driver_in_active_trips_raises_error(
 
 def test_save_all_interrupted_write_cleans_up_tmp_and_preserves_targets(
     storage_dirs: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Khi quá trình serialize hoặc ghi lỗi giữa chừng, toàn bộ file .tmp được dọn sạch và file gốc nguyên vẹn."""
+    """Khi quá trình ghi bị lỗi giữa chừng (vd: lỗi đĩa khi ghi file thứ 2), file .tmp đã ghi trước đó được dọn sạch."""
     seed_dir, runtime_dir = storage_dirs
     storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
     state = storage.load_all()
@@ -384,15 +385,27 @@ def test_save_all_interrupted_write_cleans_up_tmp_and_preserves_targets(
     # Ghi nhận nội dung 4 file JSON trước khi gọi save_all
     content_before = {f: (runtime_dir / f).read_text(encoding="utf-8") for f in JsonStorage.REQUIRED_FILES}
 
-    # Tạo một đối tượng không thể serialize JSON trong trips (gây lỗi khi ghi trips.json)
-    state["trips"].append({"invalid": object()})
+    real_open = open
+    tmp_write_count = 0
 
-    with pytest.raises(StorageError):
+    def mock_open(file, mode="r", *args, **kwargs):
+        nonlocal tmp_write_count
+        if str(file).endswith(".tmp") and "w" in mode:
+            tmp_write_count += 1
+            if tmp_write_count == 2:
+                # Ném lỗi đĩa khi bắt đầu ghi file .tmp thứ 2, lúc này file .tmp thứ 1 đã nằm trên đĩa
+                raise OSError("Mô phỏng lỗi đĩa (I/O failure) khi ghi file .tmp thứ 2")
+        return real_open(file, mode, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", mock_open)
+
+    with pytest.raises(StorageError, match="Lỗi khi lưu trữ an toàn"):
         storage.save_all(state)
 
-    # Đảm bảo không có file .tmp nào bị bỏ sót
+    # Đảm bảo file .tmp đầu tiên đã được dọn sạch, không còn sót file .tmp nào trên đĩa
+    assert tmp_write_count == 2
     assert list(runtime_dir.glob("*.tmp")) == []
 
-    # Nội dung 4 file chính thức vẫn nguyên vẹn
+    # Nội dung 4 file chính thức vẫn nguyên vẹn 100%
     content_after = {f: (runtime_dir / f).read_text(encoding="utf-8") for f in JsonStorage.REQUIRED_FILES}
     assert content_before == content_after

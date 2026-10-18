@@ -31,6 +31,76 @@ def test_queue_fifo_and_requeue_head():
     assert q.dequeue() is r1
 
 
+def test_request_queue_remove_operations():
+    # 1. Xóa phần tử duy nhất (single item queue)
+    q1 = RequestQueue()
+    r1 = request("R1")
+    q1.enqueue(r1)
+    assert len(q1) == 1
+    assert q1.remove("R1") is True
+    assert len(q1) == 0
+    assert q1.peek() is None
+    assert q1._head is None
+    assert q1._tail is None
+    # Sau khi xóa về rỗng, enqueue lại phải hoạt động bình thường
+    r_new = request("R_new")
+    q1.enqueue(r_new)
+    assert len(q1) == 1
+    assert q1.peek() is r_new
+    assert q1._tail.value is r_new
+    assert q1.dequeue() is r_new
+
+    # 2. Xóa đầu (head) trong hàng đợi nhiều phần tử
+    q2 = RequestQueue()
+    ra, rb, rc = request("RA"), request("RB"), request("RC")
+    q2.enqueue(ra)
+    q2.enqueue(rb)
+    q2.enqueue(rc)
+    assert q2.remove("RA") is True
+    assert len(q2) == 2
+    assert [r.id for r in q2] == ["RB", "RC"]
+    assert q2.peek() is rb
+    assert q2._head.value is rb
+    assert q2._tail.value is rc
+
+    # 3. Xóa giữa (middle)
+    q3 = RequestQueue()
+    q3.enqueue(ra)
+    q3.enqueue(rb)
+    q3.enqueue(rc)
+    assert q3.remove("RB") is True
+    assert len(q3) == 2
+    assert [r.id for r in q3] == ["RA", "RC"]
+    assert q3._head.value is ra
+    assert q3._tail.value is rc
+
+    # 4. Xóa cuối (tail) và kiểm tra con trỏ _tail được cập nhật về node liền trước
+    q4 = RequestQueue()
+    q4.enqueue(ra)
+    q4.enqueue(rb)
+    q4.enqueue(rc)
+    assert q4.remove("RC") is True
+    assert len(q4) == 2
+    assert [r.id for r in q4] == ["RA", "RB"]
+    assert q4._head.value is ra
+    assert q4._tail.value is rb
+    # Sau khi xóa tail, enqueue thêm phần tử mới phải nối tiếp vào tail mới (RB)
+    rd = request("RD")
+    q4.enqueue(rd)
+    assert len(q4) == 3
+    assert [r.id for r in q4] == ["RA", "RB", "RD"]
+    assert q4._tail.value is rd
+    assert q4.dequeue() is ra
+    assert q4.dequeue() is rb
+    assert q4.dequeue() is rd
+
+    # 5. Xóa ID không tồn tại
+    assert q3.remove("NON_EXISTENT") is False
+    assert len(q3) == 2
+    assert q4.remove("NON_EXISTENT") is False
+    assert len(q4) == 0
+
+
 def test_stack_lifo_and_clear():
     s = Stack()
     s.push(1)
@@ -459,4 +529,50 @@ def test_complete_trip_clears_history_and_busy_driver_cannot_move(graph_for_disp
         d.update_driver('D1', node='N2')
     d.complete_trip(t1.id)
     assert not d.can_undo() and not d.can_redo()
+
+
+def test_dispatcher_cancel_request(graph_for_dispatcher):
+    d = Dispatcher(graph_for_dispatcher, {"D1": Driver("D1", "An", "N1")})
+    r1 = d.submit_request("N3", "N4")
+    r2 = d.submit_request("N2", "N4")
+    assert len(d.queue) == 2
+    assert r1.id in d.all_requests
+
+    # Hủy yêu cầu đang chờ hợp lệ
+    assert d.cancel_request(r1.id) is True
+    assert len(d.queue) == 1
+    assert r1.id not in d.all_requests
+    assert [r.id for r in d.queue] == [r2.id]
+
+    # Hủy ID không tồn tại
+    assert d.cancel_request("NON_EXISTENT") is False
+
+    # Hủy yêu cầu đã được điều phối (ASSIGNED) -> phải trả về False
+    trip = d.dispatch_next(FakeStrategy("D1"))
+    assert trip is not None
+    assert r2.status == ASSIGNED
+    assert d.cancel_request(r2.id) is False
+
+
+def test_dispatcher_ride_estimate(graph_for_dispatcher):
+    d = Dispatcher(graph_for_dispatcher, {})
+    req = d.submit_request("N1", "N4")
+
+    # Cách gọi 1: theo request_id đã có
+    est1 = d.ride_estimate(req.id)
+    assert est1 is not None
+    distance, path = est1
+    assert distance == 7.0
+    assert path == ["N1", "N2", "N3", "N4"]
+
+    # Cách gọi 2: theo cặp (pickup_node, dropoff_node) trực tiếp
+    est2 = d.ride_estimate("N1", "N4")
+    assert est2 == est1
+
+    # Yêu cầu không tồn tại
+    assert d.ride_estimate("NON_EXISTENT_REQ") is None
+
+    # Điểm không có đường đi (đến đỉnh cô lập N5)
+    assert d.ride_estimate("N1", "N5") is None
+
 

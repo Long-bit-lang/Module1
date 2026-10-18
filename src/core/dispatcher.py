@@ -147,11 +147,10 @@ class Dispatcher:
         driver = self.drivers[result.driver_id]
         trip = Trip(f'T{self._next_trip_id}', request.id, driver.id, result.eta)
         old_node = driver.node
-        # Prepare the whole transaction before changing the queue.
-        driver.assign()
         removed_request = self.queue.dequeue()
         if removed_request is not request:
             raise RuntimeError("Hàng đợi không đồng bộ với yêu cầu điều phối")
+        driver.assign()
         request.status = ASSIGNED
         self.trips.append(trip)
         self.undo_manager.record(

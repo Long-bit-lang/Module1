@@ -1,5 +1,5 @@
-# Có thể thêm test nếu cần
 # Bảng benchmark ở docs/ALGORITHM_BENCHMARK.md
+import math
 import pytest
 import random
 
@@ -158,3 +158,26 @@ def test_a1_a2_agree_on_large_random_graphs() -> None:
                 f"Mismatch seed={seed}, trial={trial}: "
                 f"A1={(a1.driver_id, a1.eta)}, A2={(a2.driver_id, a2.eta)}"
             )
+
+
+def test_a1_a2_agree_with_float_weights_using_isclose() -> None:
+    """Kiểm tra A1 và A2 cho cùng kết quả với trọng số số thực float và so sánh bằng math.isclose."""
+    graph = RoadGraph()
+    for n in ("A", "B", "C", "D"):
+        graph.add_node(n)
+    graph.add_edge("A", "B", 1.25)
+    graph.add_edge("B", "C", 2.35)
+    graph.add_edge("D", "B", 1.15)
+    graph.add_edge("D", "C", 3.50)
+
+    drivers = {"D1": "A", "D2": "D"}
+    pickup = "C"
+
+    a1 = DijkstraPerDriver().find_driver(graph, pickup, drivers)
+    a2 = ReverseDijkstra().find_driver(graph, pickup, drivers)
+
+    assert a1.driver_id == a2.driver_id == "D2"
+    assert math.isclose(a1.eta, a2.eta, rel_tol=1e-9)
+    assert math.isclose(a1.eta, 3.50, rel_tol=1e-9)
+    assert a1.path == a2.path == ["D", "C"]
+
