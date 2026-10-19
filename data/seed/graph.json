@@ -1,21 +1,375 @@
 {
   "nodes": [
-    {"id": "N1", "name": "Đại học Bách Khoa"},
-    {"id": "N2", "name": "Bến xe Trung tâm"},
-    {"id": "N3", "name": "Cầu Rồng"},
-    {"id": "N4", "name": "Sân bay Quốc tế"},
-    {"id": "N5", "name": "Ga Đà Nẵng"},
-    {"id": "N6", "name": "Chợ Hàn"}
+    {
+      "id": "N1",
+      "name": "Đại học Bách Khoa"
+    },
+    {
+      "id": "N2",
+      "name": "Bến xe Trung tâm"
+    },
+    {
+      "id": "N3",
+      "name": "Cầu Rồng"
+    },
+    {
+      "id": "N4",
+      "name": "Sân bay Quốc tế"
+    },
+    {
+      "id": "N5",
+      "name": "Ga Đà Nẵng"
+    },
+    {
+      "id": "N6",
+      "name": "Chợ Hàn"
+    },
+    {
+      "id": "N7",
+      "name": "Bán đảo Sơn Trà"
+    },
+    {
+      "id": "N8",
+      "name": "Bãi biển Mỹ Khê"
+    },
+    {
+      "id": "N9",
+      "name": "Cầu Sông Hàn"
+    },
+    {
+      "id": "N10",
+      "name": "Cầu Trần Thị Lý"
+    },
+    {
+      "id": "N11",
+      "name": "Cầu Thuận Phước"
+    },
+    {
+      "id": "N12",
+      "name": "Danh thắng Ngũ Hành Sơn"
+    },
+    {
+      "id": "N13",
+      "name": "Bãi biển Non Nước"
+    },
+    {
+      "id": "N14",
+      "name": "Sun World Bà Nà Hills"
+    },
+    {
+      "id": "N15",
+      "name": "Công viên Châu Á"
+    },
+    {
+      "id": "N16",
+      "name": "Bảo tàng Điêu khắc Chăm"
+    },
+    {
+      "id": "N17",
+      "name": "Bệnh viện Đa khoa Đà Nẵng"
+    },
+    {
+      "id": "N18",
+      "name": "Đại học Sư phạm Đà Nẵng"
+    },
+    {
+      "id": "N19",
+      "name": "Đại học Kinh tế Đà Nẵng"
+    },
+    {
+      "id": "N20",
+      "name": "Trung tâm Hành chính Đà Nẵng"
+    },
+    {
+      "id": "N21",
+      "name": "Chợ Cồn"
+    },
+    {
+      "id": "N22",
+      "name": "Cảng Tiên Sa"
+    },
+    {
+      "id": "N23",
+      "name": "Phố cổ Hội An"
+    },
+    {
+      "id": "N24",
+      "name": "Bãi biển An Bàng"
+    },
+    {
+      "id": "N25",
+      "name": "Rừng dừa Bảy Mẫu"
+    },
+    {
+      "id": "N26",
+      "name": "Thánh địa Mỹ Sơn"
+    }
   ],
   "edges": [
-    {"from": "N1", "to": "N2", "weight": 4.0},
-    {"from": "N2", "to": "N1", "weight": 4.0},
-    {"from": "N1", "to": "N3", "weight": 10.0},
-    {"from": "N2", "to": "N4", "weight": 6.0},
-    {"from": "N3", "to": "N4", "weight": 6.0},
-    {"from": "N4", "to": "N5", "weight": 5.0},
-    {"from": "N5", "to": "N3", "weight": 3.0},
-    {"from": "N3", "to": "N6", "weight": 4.0},
-    {"from": "N6", "to": "N1", "weight": 8.0}
+    {
+      "from": "N1",
+      "to": "N2",
+      "weight": 4.0
+    },
+    {
+      "from": "N2",
+      "to": "N1",
+      "weight": 4.0
+    },
+    {
+      "from": "N1",
+      "to": "N3",
+      "weight": 10.0
+    },
+    {
+      "from": "N2",
+      "to": "N4",
+      "weight": 6.0
+    },
+    {
+      "from": "N3",
+      "to": "N4",
+      "weight": 6.0
+    },
+    {
+      "from": "N4",
+      "to": "N5",
+      "weight": 5.0
+    },
+    {
+      "from": "N5",
+      "to": "N3",
+      "weight": 3.0
+    },
+    {
+      "from": "N3",
+      "to": "N6",
+      "weight": 4.0
+    },
+    {
+      "from": "N6",
+      "to": "N1",
+      "weight": 8.0
+    },
+    {
+      "from": "N6",
+      "to": "N9",
+      "weight": 2.0
+    },
+    {
+      "from": "N9",
+      "to": "N6",
+      "weight": 2.0
+    },
+    {
+      "from": "N9",
+      "to": "N3",
+      "weight": 3.0
+    },
+    {
+      "from": "N10",
+      "to": "N3",
+      "weight": 3.0
+    },
+    {
+      "from": "N3",
+      "to": "N16",
+      "weight": 2.0
+    },
+    {
+      "from": "N16",
+      "to": "N3",
+      "weight": 2.0
+    },
+    {
+      "from": "N5",
+      "to": "N21",
+      "weight": 2.0
+    },
+    {
+      "from": "N21",
+      "to": "N5",
+      "weight": 2.0
+    },
+    {
+      "from": "N5",
+      "to": "N17",
+      "weight": 2.0
+    },
+    {
+      "from": "N17",
+      "to": "N20",
+      "weight": 2.5
+    },
+    {
+      "from": "N20",
+      "to": "N9",
+      "weight": 2.5
+    },
+    {
+      "from": "N11",
+      "to": "N22",
+      "weight": 5.0
+    },
+    {
+      "from": "N22",
+      "to": "N7",
+      "weight": 8.0
+    },
+    {
+      "from": "N7",
+      "to": "N8",
+      "weight": 10.0
+    },
+    {
+      "from": "N3",
+      "to": "N8",
+      "weight": 5.0
+    },
+    {
+      "from": "N8",
+      "to": "N3",
+      "weight": 5.0
+    },
+    {
+      "from": "N10",
+      "to": "N19",
+      "weight": 3.0
+    },
+    {
+      "from": "N19",
+      "to": "N10",
+      "weight": 3.0
+    },
+    {
+      "from": "N10",
+      "to": "N15",
+      "weight": 3.0
+    },
+    {
+      "from": "N15",
+      "to": "N10",
+      "weight": 3.0
+    },
+    {
+      "from": "N1",
+      "to": "N18",
+      "weight": 3.0
+    },
+    {
+      "from": "N18",
+      "to": "N1",
+      "weight": 3.0
+    },
+    {
+      "from": "N2",
+      "to": "N18",
+      "weight": 3.5
+    },
+    {
+      "from": "N2",
+      "to": "N14",
+      "weight": 25.0
+    },
+    {
+      "from": "N14",
+      "to": "N2",
+      "weight": 25.0
+    },
+    {
+      "from": "N8",
+      "to": "N12",
+      "weight": 7.0
+    },
+    {
+      "from": "N12",
+      "to": "N13",
+      "weight": 3.0
+    },
+    {
+      "from": "N13",
+      "to": "N12",
+      "weight": 3.0
+    },
+    {
+      "from": "N13",
+      "to": "N24",
+      "weight": 10.0
+    },
+    {
+      "from": "N24",
+      "to": "N13",
+      "weight": 10.0
+    },
+    {
+      "from": "N24",
+      "to": "N23",
+      "weight": 5.0
+    },
+    {
+      "from": "N23",
+      "to": "N25",
+      "weight": 6.0
+    },
+    {
+      "from": "N25",
+      "to": "N23",
+      "weight": 6.0
+    },
+    {
+      "from": "N23",
+      "to": "N26",
+      "weight": 30.0
+    },
+    {
+      "from": "N20",
+      "to": "N11",
+      "weight": 4.0
+    },
+    {
+      "from": "N4",
+      "to": "N1",
+      "weight": 14.0
+    },
+    {
+      "from": "N4",
+      "to": "N8",
+      "weight": 8.0
+    },
+    {
+      "from": "N4",
+      "to": "N23",
+      "weight": 35.0
+    },
+    {
+      "from": "N2",
+      "to": "N6",
+      "weight": 10.0
+    },
+    {
+      "from": "N16",
+      "to": "N19",
+      "weight": 4.0
+    },
+    {
+      "from": "N15",
+      "to": "N8",
+      "weight": 6.0
+    },
+    {
+      "from": "N21",
+      "to": "N17",
+      "weight": 1.5
+    },
+    {
+      "from": "N18",
+      "to": "N4",
+      "weight": 8.0
+    },
+    {
+      "from": "N12",
+      "to": "N23",
+      "weight": 15.0
+    }
   ]
 }
