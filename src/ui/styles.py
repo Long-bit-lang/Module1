@@ -217,7 +217,7 @@ html, body, [class*="css"] {
     background: repeating-linear-gradient(90deg, #EA580C, #EA580C 3px, transparent 3px, transparent 6px);
 }
 
-/* ── 4b. Huy hiệu Zoom & Khung cuộn bản đồ (Zoom Indicator) ────────────────── */
+/* ── 4b. Huy hiệu Zoom & Khung cuộn bản đồ (Zoom Indicator & Canvas) ───────── */
 .zoom-badge-indicator {
     display: flex;
     align-items: center;
@@ -232,11 +232,43 @@ html, body, [class*="css"] {
     user-select: none;
 }
 
+/* Khung cuộn 2 chiều tổng quát cho container chứa đồ thị */
 div[data-testid="stVerticalBlockBorderWrapper"]:has(.stGraphVizChart) {
     overflow: auto !important;
 }
-.stGraphVizChart {
+
+/* Khung Canvas bản đồ: Flexbox column cho phép căn giữa an toàn bằng margin: auto */
+.st-key-map_data_canvas,
+.st-key-map_dispatch_canvas,
+div[class*="st-key-"][class*="_canvas"] {
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: auto !important;
+}
+
+/* Khung bọc phần tử biểu đồ: margin: auto giúp căn giữa khi zoom nhỏ, tự co về 0 khi zoom lớn */
+.st-key-map_data_canvas .stElementContainer,
+.st-key-map_dispatch_canvas .stElementContainer,
+div[class*="st-key-"][class*="_canvas"] .stElementContainer {
+    margin: auto !important;
+    max-width: none !important;
+}
+
+/* Khung đồ thị Graphviz & SVG: căn giữa nội dung, không làm cắt mất mép trái khi cuộn */
+.st-key-map_data_canvas .stGraphVizChart,
+.st-key-map_dispatch_canvas .stGraphVizChart,
+div[class*="st-key-"][class*="_canvas"] .stGraphVizChart {
+    margin: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
     overflow: visible !important;
+}
+
+.st-key-map_data_canvas .stGraphVizChart > svg,
+.st-key-map_dispatch_canvas .stGraphVizChart > svg,
+div[class*="st-key-"][class*="_canvas"] .stGraphVizChart > svg {
+    margin: auto !important;
 }
 
 /* ── 5. Lộ trình di chuyển (Route Breadcrumbs) ─────────────────────────────── */

@@ -202,7 +202,8 @@ def render_graph_with_zoom(
             help="Kéo để điều chỉnh mức phóng to từ 50% đến 300%",
         )
 
-    with st.container(height=height, border=True):
+    canvas_key = f"{key_prefix}_canvas"
+    with st.container(height=height, border=True, key=canvas_key):
         if zoom_val == 100:
             st.graphviz_chart(dot, width="stretch")
         else:

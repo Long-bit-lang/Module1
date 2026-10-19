@@ -277,4 +277,56 @@ def test_build_dot_validity_and_escaping():
     assert 'Chờ: R\\"77\\"' in dot_escaped
 
 
+def test_map_canvas_containers_and_zoom_levels(app):
+    """Kiểm tra khung bản đồ có key {key_prefix}_canvas và không phát sinh lỗi ở 50%, 100%, 300%."""
+    # 1. Tab mặc định là 'Quản lý dữ liệu' -> kiểm tra key 'map_data_canvas'
+    assert not app.exception
+    container_keys = [c.key for c in app.container if c.key]
+    assert "map_data_canvas" in container_keys
+
+    # Kiểm tra ở mức zoom 100% (mặc định)
+    assert app.session_state["map_data_zoom_level"] == 100
+    assert not app.exception
+
+    # Kiểm tra ở mức zoom 50%
+    app.session_state["map_data_zoom_level"] = 50
+    app.run()
+    assert not app.exception
+    assert app.session_state["map_data_zoom_level"] == 50
+    container_keys = [c.key for c in app.container if c.key]
+    assert "map_data_canvas" in container_keys
+
+    # Kiểm tra ở mức zoom 300%
+    app.session_state["map_data_zoom_level"] = 300
+    app.run()
+    assert not app.exception
+    assert app.session_state["map_data_zoom_level"] == 300
+    container_keys = [c.key for c in app.container if c.key]
+    assert "map_data_canvas" in container_keys
+
+    # 2. Chuyển tab sang 'Điều phối chuyến' -> kiểm tra key 'map_dispatch_canvas'
+    app.session_state["main_tabs"] = "Điều phối chuyến"
+    app.run()
+    assert not app.exception
+    container_keys = [c.key for c in app.container if c.key]
+    assert "map_dispatch_canvas" in container_keys
+
+    # Kiểm tra zoom 50% trên map_dispatch
+    app.session_state["map_dispatch_zoom_level"] = 50
+    app.run()
+    assert not app.exception
+    assert app.session_state["map_dispatch_zoom_level"] == 50
+    container_keys = [c.key for c in app.container if c.key]
+    assert "map_dispatch_canvas" in container_keys
+
+    # Kiểm tra zoom 300% trên map_dispatch
+    app.session_state["map_dispatch_zoom_level"] = 300
+    app.run()
+    assert not app.exception
+    assert app.session_state["map_dispatch_zoom_level"] == 300
+    container_keys = [c.key for c in app.container if c.key]
+    assert "map_dispatch_canvas" in container_keys
+
+
+
 
