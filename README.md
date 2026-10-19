@@ -67,11 +67,11 @@ Module1/
 ### Bảng phân công thành viên
 | Thành viên | Phụ trách | Phạm vi triển khai |
 |---|---|---|
-| **TV1** | Data Models | `BaseEntity`, `Location`, `Driver`, `RideRequest`, `Trip`, enum trạng thái. |
-| **TV2** | Graph & Algorithms | `RoadGraph`, Giải thuật Dijkstra Forward (A1) & Reverse (A2), ma trận trọng số. |
-| **TV3** | Dispatcher & History | Hàng đợi yêu cầu `RequestQueue`, ngăn xếp `UndoManager`, bộ điều phối `Dispatcher`. |
-| **TV4** | Storage Engine | `JsonStorage`, Atomic Write qua file tạm `.tmp`, thẩm định schema dữ liệu. |
-| **TV5** (Lead) | UI & Integration | Streamlit UI Dashboard, tích hợp hệ thống, `CONTRACT.md`, CI/CD và tài liệu. |
+| **Nhi** | Data Models | `BaseEntity`, `Location`, `Driver`, `RideRequest`, `Trip`, enum trạng thái. |
+| **Duy** | Graph & Algorithms | `RoadGraph`, Giải thuật Dijkstra Forward (A1) & Reverse (A2), ma trận trọng số. |
+| **Thông** | Dispatcher & History | Hàng đợi yêu cầu `RequestQueue`, ngăn xếp `UndoManager`, bộ điều phối `Dispatcher`. |
+| **Thắng** | Storage Engine | `JsonStorage`, Atomic Write qua file tạm `.tmp`, thẩm định schema dữ liệu. |
+| **Long** (Lead) | UI & Integration | Streamlit UI Dashboard, tích hợp hệ thống, `CONTRACT.md`, CI/CD và tài liệu. |
 
 ---
 
