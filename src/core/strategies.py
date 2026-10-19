@@ -1,16 +1,13 @@
 """TV2 - Hai chiến lược tìm tài xế: A1 (Dijkstra từng tài xế) và A2 (Dijkstra đảo chiều)."""
 from __future__ import annotations
 
-import heapq
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from time import perf_counter
-from typing import TypeAlias
 
+from .min_heap import MinHeap
 from .road_graph import RoadGraph
-
-_HeapEntry: TypeAlias = tuple[float, str]
 
 
 @dataclass
@@ -109,14 +106,15 @@ class ReverseDijkstra(MatchStrategy):
         reverse_graph = graph.reversed()
         distances: dict[str, float] = {pickup_node: 0.0}
         next_hop: dict[str, str] = {}
-        heap: list[_HeapEntry] = [(0.0, pickup_node)]
+        heap = MinHeap()
+        heap.push((0.0, pickup_node))
         visited_count = 0
         best_eta: float | None = None
 
         while heap:
-            if best_eta is not None and heap[0][0] > best_eta:
+            if best_eta is not None and heap.peek_min()[0] > best_eta:
                 break
-            distance, node_id = heapq.heappop(heap)
+            distance, node_id = heap.pop_min()
             visited_count += 1
             if distance != distances.get(node_id):
                 continue
@@ -129,7 +127,7 @@ class ReverseDijkstra(MatchStrategy):
                 if candidate < distances.get(neighbor, float("inf")):
                     distances[neighbor] = candidate
                     next_hop[neighbor] = node_id
-                    heapq.heappush(heap, (candidate, neighbor))
+                    heap.push((candidate, neighbor))
 
         if best_eta is None:
             return MatchResult(
@@ -168,11 +166,12 @@ def _shortest_path(
 ) -> tuple[float | None, list[str] | None, int]:
     distances: dict[str, float] = {start_node: 0.0}
     previous: dict[str, str] = {}
-    heap: list[_HeapEntry] = [(0.0, start_node)]
+    heap = MinHeap()
+    heap.push((0.0, start_node))
     visited_count = 0
 
     while heap:
-        distance, node_id = heapq.heappop(heap)
+        distance, node_id = heap.pop_min()
         visited_count += 1
         if distance != distances.get(node_id):
             continue
@@ -188,7 +187,7 @@ def _shortest_path(
             if candidate < distances.get(neighbor, float("inf")):
                 distances[neighbor] = candidate
                 previous[neighbor] = node_id
-                heapq.heappush(heap, (candidate, neighbor))
+                heap.push((candidate, neighbor))
 
     return None, None, visited_count
 
@@ -197,3 +196,4 @@ STRATEGIES: dict[str, type[MatchStrategy]] = {
     DijkstraPerDriver.name: DijkstraPerDriver,
     ReverseDijkstra.name: ReverseDijkstra,
 }
+
