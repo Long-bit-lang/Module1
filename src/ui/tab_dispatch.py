@@ -7,13 +7,13 @@ import pandas as pd
 import streamlit as st
 
 from . import session as S
+from .components import get_status_badge_html, render_empty_state
 from .constants import ASSIGNED, FREE, status_label
 
 _REASON = {
-    "empty_queue": "Hàng đợi đang trống.",
-    "no_free_driver": "Không còn tài xế rảnh: hãy hoàn thành chuyến đang chạy hoặc thêm tài xế.",
-    "no_route": "Có tài xế rảnh nhưng không ai đi được tới điểm đón (đường một chiều hoặc đứt đoạn). "
-                "Yêu cầu vẫn nằm ở đầu hàng đợi.",
+    "empty_queue": "Hàng đợi yêu cầu đang trống. Vui lòng tạo yêu cầu đặt xe mới trước khi ghép chuyến.",
+    "no_free_driver": "Không còn tài xế rảnh: hãy hoàn thành chuyến đang chạy bên dưới hoặc thêm tài xế mới ở tab 'Quản lý dữ liệu'.",
+    "no_route": "Có tài xế rảnh nhưng không ai đi được tới điểm đón (đường một chiều hoặc đồ thị không liên thông). Yêu cầu vẫn nằm ở đầu hàng đợi FIFO.",
 }
 
 
@@ -40,7 +40,7 @@ def _on_dispatch() -> None:
         S.flash("warning", "Không thể điều phối: " + _REASON.get(why, "không có tài xế phù hợp."))
         return
     st.session_state[S.K_LAST] = {"trip": trip, "strategy": name, "result": strategy.last_result}
-    S.flash("success", f"Đã tạo chuyến {trip.id} cho tài xế {trip.driver_id} (ETA: {trip.eta:g} phút).")
+    S.flash("success", f"Đã ghép thành công chuyến {trip.id} cho tài xế {trip.driver_id} (ETA: {trip.eta:g} phút).")
 
 
 def _on_dispatch_all() -> None:
@@ -62,7 +62,7 @@ def _on_undo() -> None:
         st.session_state[S.K_LAST] = None
         S.flash(
             "success" if done else "warning",
-            "Đã hoàn tác lần điều phối gần nhất: yêu cầu đã quay lại đầu hàng đợi."
+            "Đã hoàn tác lần điều phối gần nhất: yêu cầu đã quay lại đầu hàng đợi FIFO."
             if done
             else "Không có gì để hoàn tác.",
         )
@@ -88,6 +88,23 @@ def _on_cancel_request() -> None:
     elif ok:
         S.flash("warning", f"Không thể hủy yêu cầu {req_id}.")
 
+
+@st.dialog("⚠️ Xác nhận hủy yêu cầu đặt xe")
+def _confirm_cancel_dialog(req_str: str) -> None:
+    st.markdown(
+        f"Bạn có chắc chắn muốn hủy yêu cầu **{html.escape(req_str)}** khỏi hàng đợi FIFO không?\n\n"
+        "Thao tác này sẽ xóa yêu cầu khỏi hàng đợi và danh sách của hệ thống."
+    )
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Xác nhận hủy", key="btn_confirm_cancel_request", type="primary", width="stretch"):
+            st.session_state["show_cancel_dialog"] = False
+            _on_cancel_request()
+            st.rerun()
+    with c2:
+        if st.button("Quay lại", key="btn_abort_cancel_request", width="stretch"):
+            st.session_state["show_cancel_dialog"] = False
+            st.rerun()
 
 
 def _on_complete(trip_id: str) -> None:
@@ -151,6 +168,7 @@ def _render_last_result() -> None:
 
 
 def _render_map(d, queue, drivers) -> None:
+    from .components import render_graph_with_zoom
     from .graph_view import build_dot
 
     routes, note = [], "Chưa có lộ trình để hiển thị."
@@ -178,12 +196,10 @@ def _render_map(d, queue, drivers) -> None:
                     f"{res.driver_id} nhận, ETA {res.eta:g} phút."
                 )
     st.subheader("Bản đồ điều phối")
-    with st.container(border=True):
-        st.graphviz_chart(
-            build_dot(d.graph.edges(), drivers, queue, S.node_label, d.graph.nodes(), routes),
-            width="stretch",
-        )
-        st.caption(note + "  Viền cam: điểm đón đang chờ.")
+    dot_dispatch = build_dot(d.graph.edges(), drivers, queue, S.node_label, d.graph.nodes(), routes)
+    render_graph_with_zoom(dot_dispatch, key_prefix="map_dispatch", height=500)
+    st.caption(note + "  Viền cam: điểm đón đang chờ.")
+
 
 
 def render() -> None:
@@ -200,9 +216,56 @@ def render() -> None:
     with col_req:
         st.subheader("Đặt xe mới")
         with st.container(border=True):
-            st.selectbox("Điểm đón khách", labels, key="req_pickup")
-            st.selectbox("Điểm trả khách", labels, key="req_dropoff", index=min(1, len(labels) - 1))
-            st.button("Gửi yêu cầu", on_click=_on_submit, key="btn_submit", type="primary", width="stretch")
+            st.selectbox("Điểm đón khách", labels, key="req_pickup", help="Chọn vị trí đón khách trên mạng lưới giao thông")
+            st.selectbox(
+                "Điểm trả khách",
+                labels,
+                key="req_dropoff",
+                index=min(1, len(labels) - 1),
+                help="Chọn địa điểm đến của hành khách",
+            )
+
+            # Live preview ước tính hành trình
+            cur_p = S.item_id(st.session_state.get("req_pickup", labels[0]))
+            cur_d = S.item_id(st.session_state.get("req_dropoff", labels[min(1, len(labels) - 1)]))
+
+            if cur_p == cur_d:
+                st.warning("⚠️ Điểm đón và điểm trả đang trùng nhau. Vui lòng chọn 2 điểm khác nhau.")
+            else:
+                est = d.ride_estimate(cur_p, cur_d) if hasattr(d, "ride_estimate") else None
+                if est:
+                    eta_val, path_nodes = est
+                    path_preview = " ➔ ".join(S.node_label(n) for n in path_nodes)
+                    st.markdown(
+                        f"""
+                        <div class="ride-preview-card">
+                            ⏱️ <b>Ước tính chuyến đi:</b> ~<b>{eta_val:g} phút</b> ({len(path_nodes) - 1} chặng)<br>
+                            <span style="font-size: 0.8rem; color: #166534;">
+                                <b>Lộ trình:</b> {html.escape(path_preview)}
+                            </span>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        """
+                        <div class="ride-preview-card warning-preview">
+                            ⚠️ <b>Không có tuyến đường:</b> Không tìm thấy đường đi từ điểm đón đến điểm trả
+                            (do đường một chiều hoặc đồ thị không liên thông).
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+            st.button(
+                "Gửi yêu cầu",
+                on_click=_on_submit,
+                key="btn_submit",
+                type="primary",
+                width="stretch",
+                help="Đưa yêu cầu đặt xe vào cuối hàng đợi FIFO",
+            )
 
     with col_queue:
         st.subheader(f"Hàng đợi yêu cầu FIFO ({len(queue)})")
@@ -212,21 +275,37 @@ def render() -> None:
                 cq1, cq2 = st.columns([3, 1.5], vertical_alignment="bottom")
                 with cq1:
                     st.selectbox(
-                        "Hủy yêu cầu khỏi hàng đợi",
+                        "Chọn yêu cầu cần hủy",
                         [f"{r.id} ({S.node_label(r.pickup_node)} → {S.node_label(r.dropoff_node)})" for r in queue],
                         key="cancel_req_select",
                     )
                 with cq2:
-                    st.button(
+                    if st.button(
                         "Hủy yêu cầu",
-                        on_click=_on_cancel_request,
                         key="btn_cancel_request",
                         type="secondary",
                         width="stretch",
                         help="Hủy yêu cầu khỏi hàng đợi FIFO (xử lý tình huống nghẽn đầu hàng nếu không có xe đón được)",
-                    )
+                    ):
+                        st.session_state["show_cancel_dialog"] = True
+
+                if st.session_state.get("show_cancel_dialog"):
+                    req_val = st.session_state.get("cancel_req_select", "")
+                    _confirm_cancel_dialog(req_val)
             else:
-                st.info("Hàng đợi hiện đang trống. Nhập điểm đón/trả ở cột bên trái để tạo yêu cầu mới.")
+                render_empty_state(
+                    "📭",
+                    "Hàng đợi yêu cầu đang trống",
+                    "Hiện không có khách nào đang chờ điều phối xe.",
+                    "Chọn điểm đón và điểm trả ở cột bên trái rồi nhấn 'Gửi yêu cầu'.",
+                )
+
+    # Hiển thị nút giải phóng nghẽn hàng nếu nguyên nhân là no_route
+    if getattr(d, "last_failure", None) == "no_route" and queue:
+        st.warning(
+            f"⚠️ **Yêu cầu đầu hàng ({queue[0].id}: {S.node_label(queue[0].pickup_node)} → {S.node_label(queue[0].dropoff_node)})** "
+            "không có tài xế nào tiếp cận được do đường một chiều. Bạn có thể hủy yêu cầu này để tiếp tục xử lý các yêu cầu kế tiếp."
+        )
 
     st.divider()
 
@@ -294,7 +373,12 @@ def render() -> None:
     # Khung 3: Danh sách các Chuyến xe
     st.subheader(f"Danh sách Chuyến xe ({len(trips)})")
     if not trips:
-        st.info("Chưa có chuyến xe nào được tạo.")
+        render_empty_state(
+            "🚕",
+            "Chưa có chuyến xe nào",
+            "Hệ thống chưa tạo chuyến xe nào trong phiên làm việc này.",
+            "Nhấn nút 'Ghép chuyến' ở trên để điều phối yêu cầu đang chờ trong hàng đợi.",
+        )
         return
 
     with st.container(border=True):
@@ -311,7 +395,7 @@ def render() -> None:
             driver_obj = drivers.get(t.driver_id)
             row[2].write(f"{t.driver_id} – {driver_obj.name}" if driver_obj else t.driver_id)
             row[3].write(f"{t.eta:g}")
-            row[4].write(status_label(t.status))
+            row[4].markdown(get_status_badge_html(t.status), unsafe_allow_html=True)
 
             if t.status == ASSIGNED:
                 row[5].button(
@@ -325,3 +409,10 @@ def render() -> None:
                 )
             else:
                 row[5].write("—")
+
+
+def render_demo_stepper() -> None:
+    """Thanh hướng dẫn kịch bản trình diễn từng bước (Demo Walkthrough)."""
+    # Khung giao diện sơ khởi cho demo stepper (sẽ hoàn thiện ở Bước 5)
+    st.info("Chế độ trình diễn đang bật. Các bước demo sẽ hiển thị tại đây.")
+

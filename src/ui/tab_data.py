@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from . import session as S
+from .components import render_empty_state, render_graph_with_zoom
 from .constants import BUSY, FREE, status_label
 from .graph_view import build_dot
 
@@ -77,6 +78,47 @@ def _on_reset_seed() -> None:
         S.flash("success", "Đã khôi phục toàn bộ dữ liệu mẫu ban đầu (Seed); lịch sử Undo/Redo đã được làm mới.")
 
 
+@st.dialog("⚠️ Xác nhận xóa tài xế")
+def _confirm_remove_driver_dialog(did: str, dname: str) -> None:
+    st.markdown(
+        f"Bạn có chắc chắn muốn xóa tài xế **{did} – {dname}** khỏi hệ thống không?\n\n"
+        "*(Lưu ý: Chỉ tài xế đang rảnh và chưa từng có lịch sử chuyến đi mới có thể xóa được)*."
+    )
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Xác nhận xóa", key="btn_confirm_remove_driver", type="primary", width="stretch"):
+            st.session_state["show_remove_driver_dialog"] = False
+            _on_remove_driver()
+            st.rerun()
+    with c2:
+        if st.button("Hủy bỏ", key="btn_cancel_remove_driver", width="stretch"):
+            st.session_state["show_remove_driver_dialog"] = False
+            st.rerun()
+
+
+@st.dialog("⚠️ Xác nhận khôi phục dữ liệu mẫu (Seed)")
+def _confirm_reset_seed_dialog() -> None:
+    st.markdown(
+        "**Bạn có chắc chắn muốn khôi phục toàn bộ dữ liệu mẫu (Seed)?**\n\n"
+        "Thao tác này sẽ:\n"
+        "- Xóa toàn bộ thay đổi dữ liệu trong thư mục `data/runtime/`.\n"
+        "- Khôi phục lại 6 địa danh Đà Nẵng, 3 tài xế ban đầu (D1, D2 rảnh; D3 bận).\n"
+        "- Khôi phục lại 2 yêu cầu đang chờ: R3 (đón tại N4) và R4 (đón tại N5).\n"
+        "- Làm mới toàn bộ lịch sử Undo/Redo và các chuyến xe đã chạy.\n\n"
+        "*Thích hợp khi bắt đầu phiên thuyết trình hoặc muốn chạy lại kịch bản từ đầu.*"
+    )
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Xác nhận khôi phục", key="btn_confirm_reset_seed", type="primary", width="stretch"):
+            st.session_state["show_reset_dialog"] = False
+            _on_reset_seed()
+            st.rerun()
+    with c2:
+        if st.button("Hủy bỏ", key="btn_cancel_reset_seed", width="stretch"):
+            st.session_state["show_reset_dialog"] = False
+            st.rerun()
+
+
 
 def render() -> None:
     d = S.dispatcher()
@@ -101,20 +143,18 @@ def render() -> None:
     st.subheader("Bản đồ Mạng lưới Giao thông")
     st.caption("Các đỉnh màu xanh lá có tài xế sẵn sàng nhận cuốc; màu đỏ có tài xế đang bận.")
 
-    c_graph, c_tables = st.columns([3, 2])
-    with c_graph:
-        with st.container(border=True):
-            st.graphviz_chart(build_dot(edges, drivers, d.queue_snapshot(), S.node_label, nodes), width="stretch")
-    with c_tables:
-        with st.container(border=True):
-            st.markdown("**Danh sách Tuyến đường**")
-            df_edges = pd.DataFrame(
-                [
-                    {"Điểm đi": S.node_label(u), "Điểm đến": S.node_label(v), "Thời gian (phút)": f"{w:g}"}
-                    for u, v, w in edges
-                ]
-            )
-            st.dataframe(df_edges, hide_index=True, width="stretch", height=280)
+    dot_map = build_dot(edges, drivers, d.queue_snapshot(), S.node_label, nodes)
+    render_graph_with_zoom(dot_map, key_prefix="map_data", height=500)
+
+    with st.expander(f"📋 Danh sách Tuyến đường ({len(edges)} cung kết nối)", expanded=False):
+        df_edges = pd.DataFrame(
+            [
+                {"Điểm đi": S.node_label(u), "Điểm đến": S.node_label(v), "Thời gian (phút)": f"{w:g}"}
+                for u, v, w in edges
+            ]
+        )
+        st.dataframe(df_edges, hide_index=True, width="stretch", height=280)
+
 
     st.divider()
 
@@ -156,17 +196,27 @@ def render() -> None:
                 )
                 c1, c2 = st.columns(2)
                 c1.button("Lưu thay đổi", on_click=_on_update_driver, key="btn_update_driver", width="stretch")
-                c2.button(
+                if c2.button(
                     "Xóa tài xế",
-                    on_click=_on_remove_driver,
                     key="btn_remove_driver",
                     type="secondary",
                     disabled=cur.status == BUSY,
                     width="stretch",
-                )
+                    help="Xóa tài xế khỏi danh sách nếu chưa có lịch sử chuyến",
+                ):
+                    st.session_state["show_remove_driver_dialog"] = True
+
+                if st.session_state.get("show_remove_driver_dialog"):
+                    _confirm_remove_driver_dialog(cur.id, cur.name)
+
                 st.caption("Tài xế đang bận hoặc đã có lịch sử chuyến không thể xóa.")
         else:
-            st.info("Chưa có tài xế nào trong hệ thống.")
+            render_empty_state(
+                "👥",
+                "Chưa có tài xế nào",
+                "Mạng lưới giao thông hiện chưa có tài xế nào được đăng ký.",
+                "Sử dụng form 'Thêm tài xế mới' bên cạnh để tạo tài xế xuất phát tại một nút giao.",
+            )
 
     st.divider()
     c_btn1, c_btn2 = st.columns(2)
@@ -179,11 +229,14 @@ def render() -> None:
             width="stretch",
         )
     with c_btn2:
-        st.button(
+        if st.button(
             "🌱 Reset về dữ liệu mẫu (Seed)",
-            on_click=_on_reset_seed,
             key="btn_reset_seed",
             type="secondary",
             help="Khôi phục toàn bộ dữ liệu runtime về trạng thái ban đầu từ data/seed/. Phù hợp khi bắt đầu demo.",
             width="stretch",
-        )
+        ):
+            st.session_state["show_reset_dialog"] = True
+
+    if st.session_state.get("show_reset_dialog"):
+        _confirm_reset_seed_dialog()

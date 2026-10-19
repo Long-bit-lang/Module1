@@ -133,13 +133,148 @@ def test_reset_to_seed_restores_data(real_app, tmp_path):
     real_app.button(key="btn_dispatch").click().run()
     assert '"T3"' in (tmp_path / "trips.json").read_text(encoding="utf-8")
 
-    # 2. Nhấn nút Reset về dữ liệu mẫu (Seed)
+    # 2. Nhấn nút Reset về dữ liệu mẫu (Seed) và xác nhận trong dialog
     real_app.button(key="btn_reset_seed").click().run()
+    real_app.button(key="btn_confirm_reset_seed").click().run()
     assert not real_app.exception
 
     # 3. File trips.json trên đĩa runtime được phục hồi về nguyên bản (chỉ có T1, T2 từ seed, không còn T3)
     content_trips = (tmp_path / "trips.json").read_text(encoding="utf-8")
     assert '"T3"' not in content_trips
     assert len(_d(real_app).trips_snapshot()) == 2
+
+
+def test_map_data_zoom_buttons_and_limits(app):
+    """Kiểm tra nút phóng to/thu nhỏ/vừa khung trên bản đồ dữ liệu và giới hạn 50% - 300%."""
+    assert app.session_state.get("map_data_zoom_level") == 100
+
+    # Phóng to (+20%)
+    app.button(key="map_data_zoom_in").click().run()
+    assert not app.exception
+    assert app.session_state["map_data_zoom_level"] == 120
+    assert app.session_state["active_tab"] == "Quản lý dữ liệu"
+
+    # Nhấn phóng to liên tục để chạm trần 300%
+    while app.session_state["map_data_zoom_level"] < 300:
+        app.button(key="map_data_zoom_in").click().run()
+    assert app.session_state["map_data_zoom_level"] == 300
+
+    # Bấm thêm lần nữa -> không vượt quá 300%
+    app.button(key="map_data_zoom_in").click().run()
+    assert app.session_state["map_data_zoom_level"] == 300
+
+    # Đặt lại về vừa khung (100%)
+    app.button(key="map_data_zoom_reset").click().run()
+    assert not app.exception
+    assert app.session_state["map_data_zoom_level"] == 100
+    assert app.session_state["active_tab"] == "Quản lý dữ liệu"
+
+    # Nhấn thu nhỏ liên tục để chạm sàn 50%
+    while app.session_state["map_data_zoom_level"] > 50:
+        app.button(key="map_data_zoom_out").click().run()
+    assert app.session_state["map_data_zoom_level"] == 50
+
+    # Bấm thêm lần nữa -> không tụt dưới 50%
+    app.button(key="map_data_zoom_out").click().run()
+    assert app.session_state["map_data_zoom_level"] == 50
+    assert app.session_state["active_tab"] == "Quản lý dữ liệu"
+
+
+def test_map_dispatch_zoom_controls_and_tab_persistence(app):
+    """Kiểm tra điều khiển zoom trên tab Điều phối chuyến và xác nhận không bị reset tab."""
+    # Chuyển tab sang Điều phối chuyến
+    app.session_state["main_tabs"] = "Điều phối chuyến"
+    app.run()
+    assert app.session_state["active_tab"] == "Điều phối chuyến"
+    assert app.session_state.get("map_dispatch_zoom_level") == 100
+
+    # Phóng to bản đồ điều phối
+    app.button(key="map_dispatch_zoom_in").click().run()
+    assert not app.exception
+    assert app.session_state["map_dispatch_zoom_level"] == 120
+    # Tab vẫn giữ nguyên là Điều phối chuyến, không bị văng về Quản lý dữ liệu
+    assert app.session_state["active_tab"] == "Điều phối chuyến"
+
+    # Vừa khung
+    app.button(key="map_dispatch_zoom_reset").click().run()
+    assert not app.exception
+    assert app.session_state["map_dispatch_zoom_level"] == 100
+    assert app.session_state["active_tab"] == "Điều phối chuyến"
+
+    # Thu nhỏ
+    app.button(key="map_dispatch_zoom_out").click().run()
+    assert not app.exception
+    assert app.session_state["map_dispatch_zoom_level"] == 80
+    assert app.session_state["active_tab"] == "Điều phối chuyến"
+
+
+def test_build_dot_validity_and_escaping():
+    """Kiểm thử đơn vị build_dot: cấu trúc DOT hợp lệ, layout, escape ký tự đặc biệt."""
+    from src.ui.graph_view import build_dot
+
+    # 1. Kiểm tra cấu trúc DOT cơ bản và layout mặc định (neato)
+    edges = [("N1", "N2", 4.5), ("N2", "N3", 2.0)]
+    nodes = ["N1", "N2", "N3"]
+
+    class DummyDriver:
+        def __init__(self, id, name, node, status):
+            self.id = id
+            self.name = name
+            self.node = node
+            self.status = status
+
+    class DummyReq:
+        def __init__(self, id, pickup_node):
+            self.id = id
+            self.pickup_node = pickup_node
+
+    drivers = {"D1": DummyDriver("D1", "Nguyễn Văn An", "N1", "free")}
+    queue = [DummyReq("R1", "N2")]
+
+    dot = build_dot(edges, drivers, queue, lambda n: f"{n} – Vị trí {n}", nodes)
+    assert dot.startswith("digraph G {")
+    assert dot.strip().endswith("}")
+    assert 'layout="neato"' in dot
+    assert "overlap=false" in dot
+    assert "splines=true" in dot
+    assert 'sep="+8"' in dot
+    assert '"N1"' in dot and '"N2"' in dot and '"N3"' in dot
+    assert '"N1" -> "N2"' in dot
+    assert '"4.5p"' in dot or '4.5p' in dot
+    assert "Rảnh: D1 (An)" in dot
+    assert "Chờ: R1" in dot
+
+    # 2. Kiểm tra các layout khác
+    dot_fdp = build_dot(edges, drivers, queue, str, nodes, layout="fdp")
+    assert 'layout="fdp"' in dot_fdp
+
+    dot_tb = build_dot(edges, drivers, queue, str, nodes, layout="TB")
+    assert 'rankdir=TB' in dot_tb
+
+    dot_lr = build_dot(edges, drivers, queue, str, nodes, layout="LR")
+    assert 'rankdir=LR' in dot_lr
+
+    # 3. Ký tự đặc biệt và dấu nháy kép (quotes, backslashes, XML brackets)
+    special_node = 'N"1" <Special> & \\Backslash'
+    d_special = DummyDriver('D"99"', 'Lê "Văn" Cường', special_node, "busy")
+    r_special = DummyReq('R"77"', special_node)
+    special_edges = [(special_node, "N2", 12.0)]
+    special_nodes = [special_node, "N2"]
+
+    dot_escaped = build_dot(
+        special_edges,
+        {'D"99"': d_special},
+        [r_special],
+        lambda n: f'Tên "đặc biệt" <{n}>',
+        special_nodes,
+    )
+    assert dot_escaped.startswith("digraph G {")
+    # Đỉnh được escape đúng dạng \"
+    assert '\\"1\\"' in dot_escaped
+    assert '\\\\Backslash' in dot_escaped
+    assert 'Tên \\"đặc biệt\\"' in dot_escaped
+    assert 'Bận: D\\"99\\" (Cường)' in dot_escaped
+    assert 'Chờ: R\\"77\\"' in dot_escaped
+
 
 

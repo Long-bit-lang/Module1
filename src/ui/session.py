@@ -123,9 +123,18 @@ def flash(kind: str, message: str) -> None:
 
 
 def render_flash() -> None:
-    show = {"success": st.success, "error": st.error, "warning": st.warning, "info": st.info}
     for kind, message in st.session_state[K_FLASH]:
-        show.get(kind, st.info)(message)
+        if kind == "success":
+            try:
+                st.toast(message, icon="✅")
+            except Exception:
+                st.success(message)
+        elif kind == "error":
+            st.error(message, icon="🚨")
+        elif kind == "warning":
+            st.warning(message, icon="⚠️")
+        else:
+            st.info(message, icon="ℹ️")
     st.session_state[K_FLASH] = []
 
 
