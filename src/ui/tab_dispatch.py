@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from . import session as S
-from .components import get_status_badge_html, render_empty_state, render_route_breadcrumb
+from .components import get_status_badge_html, page_header, render_empty_state, render_route_breadcrumb
 from .constants import ASSIGNED, COMPLETED, FREE, status_label
 
 _REASON = {
@@ -336,6 +336,38 @@ def render() -> None:
     drivers = d.drivers_snapshot()
     trips = d.trips_snapshot()
     free_count = sum(1 for x in drivers.values() if x.status == FREE)
+    active_trips_count = sum(1 for t in trips if t.status == ASSIGNED)
+    available_strats = S.strategies()
+    current_strat = st.session_state.get("strategy_name") or (next(iter(available_strats)) if available_strats else "A1")
+
+    page_header(
+        icon="🚕",
+        title="Điều phối chuyến",
+        subtitle="Nhận yêu cầu, ghép tài xế tối ưu và hoàn tác thao tác",
+        chips=[
+            ("Hàng đợi", f"{len(queue)}"),
+            ("Xe rảnh", f"{free_count}"),
+            ("Chuyến đang chạy", f"{active_trips_count}"),
+            ("Chiến lược", f"{current_strat}"),
+        ],
+    )
+
+    with st.expander("🚀 Bắt đầu nhanh (3 bước trải nghiệm luồng nghiệp vụ)", expanded=False):
+        st.markdown(
+            """
+            <div class="quick-start-box">
+                <div style="margin-bottom: 0.6rem; line-height: 1.65;">
+                    <span class="qs-step">1</span><b>Đặt xe mới:</b> Mở bảng thao tác bên phải → chọn điểm đón & trả khách tại mục <i>"(1) Đặt xe"</i> → nhấn <b>"Gửi yêu cầu"</b>.<br>
+                    <span class="qs-step">2</span><b>Ghép chuyến tối ưu:</b> Tại mục <i>"(3) Điều phối"</i> chọn thuật toán <b>A1</b> hoặc <b>A2</b> → nhấn <b>"Ghép chuyến"</b>.<br>
+                    <span class="qs-step">3</span><b>Hoàn tác & Hoàn thành:</b> Nhấn <b>"Undo"</b> để hủy gán chuyến; hoặc nhấn <b>"Hoàn thành chuyến"</b> trong danh sách đang chạy để kết thúc cuốc và giải phóng tài xế.
+                </div>
+                <div style="font-size: 0.82rem; color: #475569; border-top: 1px dashed #CBD5E1; padding-top: 0.45rem; margin-top: 0.45rem;">
+                    <b>Ý nghĩa màu sắc trên bản đồ:</b> 🟢 Viền xanh lá = Xe rảnh &nbsp;|&nbsp; 🔴 Viền đỏ = Xe bận &nbsp;|&nbsp; 🟠 Viền cam = Điểm đón đang chờ &nbsp;|&nbsp; ── Xanh lá = Đón khách &nbsp;|&nbsp; ╌╌ Cam nét đứt = Chở khách
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     # Khung 1: Hàng đợi yêu cầu FIFO
     st.subheader(f"Hàng đợi yêu cầu FIFO ({len(queue)})")

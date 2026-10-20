@@ -3,12 +3,9 @@
 > **Dự án Module 1** — Mô phỏng và giải quyết bài toán điều phối đặt xe tự động, tối ưu hóa thời gian đón khách (ETA) trên mạng lưới giao thông có hướng sử dụng giải thuật tìm đường ngắn nhất, hàng đợi FIFO, cơ chế hoàn tác Undo/Redo và lưu trữ JSON nguyên tử (Atomic).
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
-[![Framework](https://img.shields.io/badge/Streamlit-1.63%2B-FF4B4B.svg)](https://streamlit.io/)
-[![Package Manager](https://img.shields.io/badge/uv-Astral-purple.svg)](https://docs.astral.sh/uv/)
-[![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Framework](https://img.shields.io/badge/Streamlit-1.66%2B-FF4B4B.svg)](https://streamlit.io/)
 [![Package Manager](https://img.shields.io/badge/uv-Astral-purple.svg)](https://docs.astral.sh/uv/)
-[![Tests](https://img.shields.io/badge/pytest-144%20passed-brightgreen.svg)](https://pytest.org/)
+[![Tests](https://img.shields.io/badge/pytest-148%20passed-brightgreen.svg)](https://pytest.org/)
 
 ---
 
@@ -85,6 +82,11 @@ Module1/
 ### 🧭 Điều hướng dọc & Bảng thao tác ẩn/hiện (Hạng mục A)
 - **Menu dọc bên trái**: Điều hướng 3 trang ("Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán") bằng `st.sidebar.radio` với giao diện bo góc, icon và hiệu ứng active màu `#EFF6FF`, duy trì nguyên vẹn trạng thái phiên làm việc không bị reset khi tương tác.
 - **Bảng thao tác trượt (Sliding Action Panel)**: Cố định bên phải (width: 360px), hỗ trợ nút nổi bật/tắt (toggle) chuyển trạng thái mượt mà (transition ≤200ms). Toàn bộ widget thao tác (đặt xe, sửa/xóa tài xế, ghép chuyến, undo/redo, hoàn thành chuyến) tập trung tại panel giúp giao diện chính tối ưu hoàn toàn cho hiển thị KPI, bản đồ và dữ liệu ở độ phân giải 1366x768.
+
+### 🏷️ Header trang riêng biệt & Chip thông số động (Page Header & Chips)
+- Mỗi trang nghiệp vụ sở hữu header riêng biệt gồm: icon trang, tiêu đề lớn (`h1`), mô tả phụ ngữ cảnh và hàng chip thông số động cập nhật theo thời gian thực (số đỉnh, số cung, xe rảnh, xe bận, hàng đợi, chuyến đang chạy, chiến lược đang chọn).
+- Thiết kế bo góc 10px với viền trái màu xanh thương hiệu `#2563EB`, tự động ngắt dòng linh hoạt với `flex-wrap` trên màn hình 1366x768 và bảo đảm an toàn chống XSS với `html.escape`.
+- Tên ứng dụng "🚕 Hệ thống Điều phối Đặt xe Thông minh" được đưa lên đầu thanh Sidebar tạo điểm nhấn thương hiệu tinh tế.
 
 ### 🔔 Trung tâm thông báo nổi bật & Nhật ký thao tác (Hạng mục B)
 - Thông báo dạng banner lớn với viền trái 6px phân màu theo chuẩn WCAG AA (Thành công, Lỗi, Cảnh báo, Thông tin) đặt ở đầu vùng làm việc chính.

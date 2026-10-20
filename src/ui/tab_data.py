@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from . import session as S
-from .components import render_empty_state, render_graph_with_zoom
+from .components import page_header, render_empty_state, render_graph_with_zoom
 from .constants import BUSY, FREE, status_label
 from .graph_view import build_dot
 
@@ -170,14 +170,18 @@ def render() -> None:
     free_count = sum(1 for x in drivers.values() if x.status == FREE)
     busy_count = len(drivers) - free_count
 
-    # 1. Thống kê tổng quan mạng lưới
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Điểm giao thông", f"{len(nodes)} đỉnh", help="Số nút giao thông trên bản đồ")
-    m2.metric("Tuyến kết nối", f"{len(edges)} cung", help="Số đoạn đường một chiều")
-    m3.metric("Tài xế sẵn sàng", f"{free_count} xe", help="Tài xế đang ở trạng thái rảnh")
-    m4.metric("Tài xế đang bận", f"{busy_count} xe", help="Tài xế đang thực hiện cuốc")
+    page_header(
+        icon="🗺️",
+        title="Quản lý dữ liệu",
+        subtitle="Mạng lưới giao thông và đội ngũ tài xế",
+        chips=[
+            ("Số đỉnh", f"{len(nodes)}"),
+            ("Số cung", f"{len(edges)}"),
+            ("Xe rảnh", f"{free_count}"),
+            ("Xe bận", f"{busy_count}"),
+        ],
+    )
 
-    st.divider()
 
     # 2. Bản đồ giao thông
     st.subheader("Bản đồ Mạng lưới Giao thông")

@@ -235,7 +235,7 @@ def render_action_panel() -> None:
     active_trips = [t for t in trips if t.status == ASSIGNED]
 
     # Nút nổi bật tắt panel luôn ở DOM với nhãn trực quan
-    toggle_label = "✕ Thu gọn bảng" if is_open else "⚡ Bảng thao tác ◀"
+    toggle_label = "Thu gọn bảng" if is_open else "Bảng thao tác ◀"
     st.button(
         toggle_label,
         key="btn_toggle_panel",
@@ -247,7 +247,7 @@ def render_action_panel() -> None:
         st.markdown(
             """
             <div class="panel-header">
-                <span class="panel-header-title">⚡ BẢNG THAO TÁC NHANH</span>
+                <span class="panel-header-title">BẢNG THAO TÁC NHANH</span>
             </div>
             """,
             unsafe_allow_html=True,

@@ -12,6 +12,7 @@ import streamlit as st
 from core.road_graph import RoadGraph
 from core.strategies import STRATEGIES
 from . import session as S
+from .components import page_header
 from .constants import FREE
 
 K_BENCH = "benchmark_result"
@@ -177,9 +178,19 @@ def render() -> None:
     d = S.dispatcher()
     free_drivers = [x for x in d.drivers_snapshot().values() if x.status == FREE]
     free = len(free_drivers)
+    nodes = d.graph.nodes()
+    edges = d.graph.edges()
 
-    st.subheader("📊 Đối chuẩn Thuật toán Ghép xe: A1 vs A2")
-    st.caption("So sánh tính đúng đắn, số đỉnh duyệt qua min-heap và thời gian thực thi giữa hai giải thuật tìm đường.")
+    page_header(
+        icon="📊",
+        title="Đối chuẩn thuật toán",
+        subtitle="So sánh A1 và A2 về kết quả và hiệu năng",
+        chips=[
+            ("Xe rảnh", f"{free}"),
+            ("Số đỉnh", f"{len(nodes)}"),
+            ("Số cung", f"{len(edges)}"),
+        ],
+    )
 
     # ── PHẦN 1: GIẢI THÍCH TRỰC QUAN BẢN CHẤT HAI THUẬT TOÁN ──────────────────
     c_a1, c_a2, c_rule = st.columns(3)

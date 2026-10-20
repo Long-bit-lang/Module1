@@ -652,6 +652,97 @@ div[data-testid="stButton"] button {
     padding: 0.2rem 0.6rem;
     border-radius: 6px;
     margin-bottom: 0.4rem;
+/* ── 10. Tiêu đề trang & Chip thông số (Page header) ──────────────────────── */
+.page-header {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-left: 5px solid #2563EB;
+    border-radius: 10px;
+    padding: 0.9rem 1.25rem;
+    margin-bottom: 1.15rem;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+.page-header-top {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.page-header h1.page-header-title {
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 1.45rem !important;
+    font-weight: 700 !important;
+    color: #0F172A !important;
+    line-height: 1.25 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    border: none !important;
+}
+.page-header-icon {
+    font-size: 1.5rem;
+    line-height: 1;
+}
+.page-header-text {
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: #0F172A;
+}
+.page-header-subtitle {
+    font-size: 0.88rem;
+    color: #64748B;
+    margin-top: 0.3rem;
+    margin-bottom: 0.65rem;
+    line-height: 1.4;
+}
+.header-chips-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    align-items: center;
+    margin-top: 0.4rem;
+}
+.header-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 0.25rem 0.65rem;
+    font-size: 0.82rem;
+    color: #334155;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+    transition: background 150ms ease, border-color 150ms ease;
+}
+.header-chip:hover {
+    background: #EFF6FF;
+    border-color: #BFDBFE;
+}
+.header-chip-label {
+    font-weight: 500;
+    color: #64748B;
+}
+.header-chip-val {
+    font-weight: 700;
+    color: #2563EB;
+}
+
+/* ── 11. Thương hiệu thanh bên (Sidebar Brand) ────────────────────────────── */
+.sidebar-brand-box {
+    padding: 0.2rem 0 0.5rem 0;
+    margin-bottom: 0.2rem;
+}
+.sidebar-brand-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #1E293B;
+    line-height: 1.35;
+}
+.sidebar-brand-sub {
+    font-size: 0.75rem;
+    color: #64748B;
+    margin-top: 0.15rem;
 }
 </style>
 """

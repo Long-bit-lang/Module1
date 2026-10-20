@@ -7,8 +7,6 @@ from pathlib import Path
 import streamlit as st
 
 from ui import session, tab_benchmark, tab_data, tab_dispatch
-from ui.components import render_kpi_card
-from ui.constants import ASSIGNED, COMPLETED, FREE
 from ui.styles import CUSTOM_CSS
 
 st.set_page_config(
@@ -37,28 +35,28 @@ except Exception as exc:
         st.rerun()
     st.stop()
 
-d = session.dispatcher()
-drivers = d.drivers_snapshot()
-queue = d.queue_snapshot()
-trips = d.trips_snapshot()
-free = sum(1 for x in drivers.values() if x.status == FREE)
-active_trips = sum(1 for t in trips if t.status == ASSIGNED)
-completed_trips = sum(1 for t in trips if t.status == COMPLETED)
-
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 NAV_PAGES = ["Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán"]
 
 with st.sidebar:
-    st.markdown("### 🧭 Điều hướng Hệ thống")
+    st.markdown(
+        """
+        <div class="sidebar-brand-box">
+            <div class="sidebar-brand-title">🚕 Hệ thống Điều phối Đặt xe Thông minh</div>
+            <div class="sidebar-brand-sub">Tối ưu hóa hành trình trên đồ thị</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     current_page = st.radio(
-        "Điều hướng hệ thống",
+        "Hệ thống Điều phối Đặt xe Thông minh",
         NAV_PAGES,
         key="main_nav",
         label_visibility="collapsed",
     )
 
     st.divider()
-    sidebar_toggle_label = "👉 Đóng bảng thao tác" if st.session_state.get("panel_open", True) else "⚡ Mở bảng thao tác"
+    sidebar_toggle_label = "Đóng bảng thao tác" if st.session_state.get("panel_open", True) else "Mở bảng thao tác"
     if st.button(
         sidebar_toggle_label,
         key="btn_sidebar_panel_toggle",
@@ -67,66 +65,6 @@ with st.sidebar:
     ):
         st.session_state["panel_open"] = not st.session_state.get("panel_open", True)
         st.rerun()
-
-# ── Header ──────────────────────────────────────────────────────────────────
-st.title("🚕 Hệ thống Điều phối Đặt xe Thông minh")
-st.caption(
-    "Tối ưu hóa hành trình trên đồ thị giao thông · Thuật toán Dijkstra A1/A2 · "
-    "Hàng đợi FIFO · Lịch sử Undo/Redo · Lưu trữ nguyên tử (Atomic)"
-)
-
-# ── Header KPI Cards (Đặt ở đầu trang chính) ─────────────────────────────────
-kpi_c1, kpi_c2, kpi_c3, kpi_c4 = st.columns(4)
-with kpi_c1:
-    render_kpi_card(
-        "Tài xế sẵn sàng",
-        f"{free}/{len(drivers)} xe",
-        "Đang rảnh đón khách",
-        "🟢",
-        "Số lượng tài xế rảnh sẵn sàng nhận cuốc trên tổng số tài xế",
-    )
-with kpi_c2:
-    render_kpi_card(
-        "Hàng đợi yêu cầu",
-        f"{len(queue)} yêu cầu",
-        "Chờ điều phối FIFO",
-        "⏳",
-        "Số lượng khách hàng đang chờ điều phối xe theo thứ tự đến trước xử lý trước",
-    )
-with kpi_c3:
-    render_kpi_card(
-        "Chuyến đang chạy",
-        f"{active_trips} chuyến",
-        "Đang đón / chở khách",
-        "🚗",
-        "Số lượng chuyến xe đang hoạt động",
-    )
-with kpi_c4:
-    render_kpi_card(
-        "Đã hoàn thành",
-        f"{completed_trips} chuyến",
-        "Kết thúc an toàn",
-        "✅",
-        "Tổng số chuyến xe đã kết thúc thành công",
-    )
-
-# ── Khối Bắt đầu nhanh ───────────────────────────────────────────────────────
-with st.expander("🚀 Bắt đầu nhanh (3 bước trải nghiệm luồng nghiệp vụ)", expanded=True):
-    st.markdown(
-        """
-        <div class="quick-start-box">
-            <div style="margin-bottom: 0.6rem; line-height: 1.65;">
-                <span class="qs-step">1</span><b>Đặt xe mới:</b> Mở panel thao tác bên phải → chọn điểm đón & trả khách tại mục <i>"(1) Đặt xe"</i> → nhấn <b>"Gửi yêu cầu"</b>.<br>
-                <span class="qs-step">2</span><b>Ghép chuyến tối ưu:</b> Tại mục <i>"(3) Điều phối"</i> chọn thuật toán <b>A1</b> (Dijkstra từng tài xế) hoặc <b>A2</b> (Dijkstra đảo chiều) → nhấn <b>"Ghép chuyến"</b>.<br>
-                <span class="qs-step">3</span><b>Hoàn tác & Hoàn thành:</b> Nhấn <b>"Undo"</b> để hủy gán chuyến; hoặc nhấn <b>"Hoàn thành chuyến"</b> trong danh sách đang chạy để kết thúc cuốc và giải phóng tài xế.
-            </div>
-            <div style="font-size: 0.82rem; color: #475569; border-top: 1px dashed #CBD5E1; padding-top: 0.45rem; margin-top: 0.45rem;">
-                <b>Ý nghĩa màu sắc trên bản đồ:</b> 🟢 Viền xanh lá = Xe rảnh &nbsp;|&nbsp; 🔴 Viền đỏ = Xe bận &nbsp;|&nbsp; 🟠 Viền cam = Điểm đón đang chờ &nbsp;|&nbsp; ── Xanh lá = Đón khách &nbsp;|&nbsp; ╌╌ Cam nét đứt = Chở khách
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
 # ── Flash messages (ngay trước nội dung trang chính) ──────────────────────────
 session.render_flash()

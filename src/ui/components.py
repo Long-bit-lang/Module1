@@ -13,6 +13,61 @@ import streamlit as st
 from .constants import ASSIGNED, BUSY, COMPLETED, FREE, QUEUED, status_label
 
 
+def build_page_header_html(
+    icon: str,
+    title: str,
+    subtitle: str,
+    chips: list[tuple[str, str]] | None = None,
+) -> str:
+    """Tạo chuỗi HTML cho header trang với icon, tiêu đề lớn, mô tả và hàng chip thông số.
+
+    Mọi chuỗi đưa vào HTML đều qua `html.escape` để đảm bảo an toàn XSS.
+    """
+    safe_icon = html.escape(str(icon))
+    safe_title = html.escape(str(title))
+    safe_subtitle = html.escape(str(subtitle))
+
+    chips_html = ""
+    if chips:
+        chips_items = []
+        for label, val in chips:
+            safe_label = html.escape(str(label))
+            safe_val = html.escape(str(val))
+            label_display = safe_label if safe_label.endswith(":") else f"{safe_label}:"
+            chips_items.append(
+                f'<span class="header-chip">'
+                f'<span class="header-chip-label">{label_display}</span> '
+                f'<span class="header-chip-val">{safe_val}</span>'
+                f'</span>'
+            )
+        chips_str = "".join(chips_items)
+        chips_html = f'<div class="header-chips-wrap">{chips_str}</div>'
+
+    return (
+        f'<div class="page-header">\n'
+        f'    <div class="page-header-top">\n'
+        f'        <h1 class="page-header-title">\n'
+        f'            <span class="page-header-icon">{safe_icon}</span>\n'
+        f'            <span class="page-header-text">{safe_title}</span>\n'
+        f'        </h1>\n'
+        f'    </div>\n'
+        f'    <div class="page-header-subtitle">{safe_subtitle}</div>\n'
+        f'    {chips_html}\n'
+        f'</div>'
+    )
+
+
+def page_header(
+    icon: str,
+    title: str,
+    subtitle: str,
+    chips: list[tuple[str, str]] | None = None,
+) -> None:
+    """Hiển thị header chuẩn hóa cho từng trang nghiệp vụ."""
+    st.markdown(build_page_header_html(icon, title, subtitle, chips), unsafe_allow_html=True)
+
+
+
 def render_kpi_card(
     title: str,
     value: str | int,

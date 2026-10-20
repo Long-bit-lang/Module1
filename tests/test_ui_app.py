@@ -472,6 +472,96 @@ def test_table_filtering_reduces_rows_and_reset_restores(app):
     assert app.session_state["flt_trips_search"] == ""
 
 
+def test_page_headers_distinct_per_page(app):
+    """Kiểm tra AppTest: ở mỗi trang, header chứa đúng tiêu đề trang đó và KHÔNG chứa tiêu đề hai trang còn lại.
+
+    Phương pháp kiểm tra: Qua `app.markdown`, trích xuất markdown có class 'page-header' và kiểm tra tiêu đề.
+    """
+    # 1. Trang mặc định ban đầu: "Quản lý dữ liệu"
+    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
+    headers = [m.value for m in app.markdown if '<div class="page-header">' in m.value]
+    assert len(headers) == 1
+    assert "Quản lý dữ liệu" in headers[0]
+    assert "Điều phối chuyến" not in headers[0]
+    assert "Đối chuẩn thuật toán" not in headers[0]
+
+    # 2. Chuyển sang "Điều phối chuyến"
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+    headers = [m.value for m in app.markdown if '<div class="page-header">' in m.value]
+    assert len(headers) == 1
+    assert "Điều phối chuyến" in headers[0]
+    assert "Quản lý dữ liệu" not in headers[0]
+    assert "Đối chuẩn thuật toán" not in headers[0]
+
+    # 3. Chuyển sang "Đối chuẩn thuật toán"
+    app.sidebar.radio(key="main_nav").set_value("Đối chuẩn thuật toán").run()
+    assert not app.exception
+    headers = [m.value for m in app.markdown if '<div class="page-header">' in m.value]
+    assert len(headers) == 1
+    assert "Đối chuẩn thuật toán" in headers[0]
+    assert "Quản lý dữ liệu" not in headers[0]
+    assert "Điều phối chuyến" not in headers[0]
+
+
+def test_dispatch_header_queue_chip_updates_after_submit(app):
+    """Test chip phản ánh đúng dữ liệu: sau khi gửi yêu cầu (btn_submit), chip 'Hàng đợi' tăng đúng 1."""
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    # Lấy giá trị ban đầu của chip Hàng đợi
+    headers = [m.value for m in app.markdown if '<div class="page-header">' in m.value]
+    assert len(headers) == 1
+    initial_queue_len = len(_d(app).queue_snapshot())
+    assert f'Hàng đợi:</span> <span class="header-chip-val">{initial_queue_len}</span>' in headers[0]
+
+    # Gửi một yêu cầu đặt xe mới
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+
+    # Kiểm tra chip Hàng đợi sau khi gửi: tăng đúng 1
+    headers_after = [m.value for m in app.markdown if '<div class="page-header">' in m.value]
+    assert len(headers_after) == 1
+    expected_new_len = initial_queue_len + 1
+    assert f'Hàng đợi:</span> <span class="header-chip-val">{expected_new_len}</span>' in headers_after[0]
+
+
+def test_page_header_html_escaping_with_special_characters():
+    """Test unit cho page_header (build_page_header_html) với các ký tự đặc biệt (<, &, ") để xác nhận đã escape."""
+    from ui.components import build_page_header_html
+
+    raw_icon = '<script>alert("hack")</script>'
+    raw_title = 'Tiêu đề <Quản lý> & "Test"'
+    raw_subtitle = 'Mô tả có ký tự & <đặc biệt> "nháy kép"'
+    raw_chips = [
+        ('Hàng đợi <chờ>', '1 & 2 "khách"'),
+        ('<span class="bad">', '"100%" & <an toàn>'),
+    ]
+
+    html_out = build_page_header_html(raw_icon, raw_title, raw_subtitle, raw_chips)
+
+    # Đảm bảo không chứa thẻ HTML thô chưa escape
+    assert '<script>' not in html_out
+    assert '<Quản lý>' not in html_out
+    assert '<đặc biệt>' not in html_out
+    assert '<span class="bad">' not in html_out
+    assert '<an toàn>' not in html_out
+    assert 'alert("hack")' not in html_out
+
+    # Đảm bảo các ký tự đặc biệt đã được chuyển đổi thành HTML entities an toàn
+    assert '&lt;script&gt;' in html_out
+    assert '&lt;Quản lý&gt;' in html_out
+    assert '&amp;' in html_out
+    assert '&quot;Test&quot;' in html_out
+    assert '&quot;nháy kép&quot;' in html_out
+    assert '&lt;chờ&gt;' in html_out
+    assert '&quot;khách&quot;' in html_out
+    assert '&quot;100%&quot;' in html_out
+
+
+
 
 
 
