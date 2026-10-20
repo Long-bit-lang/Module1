@@ -5,7 +5,10 @@
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Framework](https://img.shields.io/badge/Streamlit-1.63%2B-FF4B4B.svg)](https://streamlit.io/)
 [![Package Manager](https://img.shields.io/badge/uv-Astral-purple.svg)](https://docs.astral.sh/uv/)
-[![Tests](https://img.shields.io/badge/pytest-136%20passed-brightgreen.svg)](https://pytest.org/)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
+[![Framework](https://img.shields.io/badge/Streamlit-1.66%2B-FF4B4B.svg)](https://streamlit.io/)
+[![Package Manager](https://img.shields.io/badge/uv-Astral-purple.svg)](https://docs.astral.sh/uv/)
+[![Tests](https://img.shields.io/badge/pytest-144%20passed-brightgreen.svg)](https://pytest.org/)
 
 ---
 
@@ -46,21 +49,23 @@ Module1/
 │   │   ├── undo_manager.py# [TV3] Quản lý lịch sử Undo / Redo
 │   │   ├── dispatcher.py  # [TV3] Bộ điều phối nghiệp vụ tập trung
 │   │   └── json_storage.py# [TV4] Lưu trữ đọc/ghi JSON nguyên tử (Atomic)
-│   ├── ui/                # [TV5] Giao diện người dùng Streamlit
-│   │   ├── session.py     # Quản lý Session State & Cầu nối Backend
-│   │   ├── tab_data.py    # Tab 1: Quản lý dữ liệu mạng lưới & Tài xế
-│   │   ├── tab_dispatch.py# Tab 2: Điều phối cuốc xe & Undo/Redo
-│   │   ├── tab_benchmark.py# Tab 3: Đối chuẩn hiệu năng giải thuật
+│   ├── ui/                # [TV5] Giao diện người dùng Streamlit nâng cao
+│   │   ├── session.py     # Quản lý Session State & Trung tâm thông báo
+│   │   ├── panel.py       # Bảng thao tác trượt ẩn/hiện (Sliding Action Panel)
+│   │   ├── tab_data.py    # Trang 1: Quản lý dữ liệu mạng lưới & Tài xế
+│   │   ├── tab_dispatch.py# Trang 2: Điều phối chuyến xe & Lịch sử
+│   │   ├── tab_benchmark.py# Trang 3: Đối chuẩn hiệu năng giải thuật
+│   │   ├── components.py  # Các UI Component dùng chung (KPI, breadcrumb, empty state)
 │   │   ├── graph_view.py  # Bản đồ Graphviz với lộ trình trực quan
 │   │   ├── constants.py   # Hằng số trạng thái dùng chung
 │   │   ├── ports.py       # Protocol giao tiếp chuẩn UI-Backend
 │   │   ├── mock.py        # Backend giả lập dự phòng
-│   │   └── styles.py      # Tùy biến giao diện CSS Inter
+│   │   └── styles.py      # Tùy biến giao diện CSS Inter & Dark/Light WCAG AA
 │   └── app.py             # [TV5] Entrypoint ứng dụng Streamlit
 ├── data/
 │   ├── seed/              # Dữ liệu gốc chuẩn (graph, drivers, requests, trips)
 │   └── runtime/           # Dữ liệu runtime tự động lưu trữ nguyên tử
-├── docs/                  # Tài liệu phân tích, hợp đồng giao tiếp & benchmark
+├── docs/                  # Tài liệu phân tích, hợp đồng giao tiếp & đề xuất CONTRACT
 └── tests/                 # Bộ kịch bản kiểm thử tự động (Unit, Contract, UI AppTest, Integration)
 ```
 
@@ -77,20 +82,36 @@ Module1/
 
 ## 3. Tính năng nổi bật
 
-### 🗺️ Mạng lưới giao thông trực quan (Graphviz)
+### 🧭 Điều hướng dọc & Bảng thao tác ẩn/hiện (Hạng mục A)
+- **Menu dọc bên trái**: Điều hướng 3 trang ("Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán") bằng `st.sidebar.radio` với giao diện bo góc, icon và hiệu ứng active màu `#EFF6FF`, duy trì nguyên vẹn trạng thái phiên làm việc không bị reset khi tương tác.
+- **Bảng thao tác trượt (Sliding Action Panel)**: Cố định bên phải (width: 360px), hỗ trợ nút nổi bật/tắt (toggle) chuyển trạng thái mượt mà (transition ≤200ms). Toàn bộ widget thao tác (đặt xe, sửa/xóa tài xế, ghép chuyến, undo/redo, hoàn thành chuyến) tập trung tại panel giúp giao diện chính tối ưu hoàn toàn cho hiển thị KPI, bản đồ và dữ liệu ở độ phân giải 1366x768.
+
+### 🔔 Trung tâm thông báo nổi bật & Nhật ký thao tác (Hạng mục B)
+- Thông báo dạng banner lớn với viền trái 6px phân màu theo chuẩn WCAG AA (Thành công, Lỗi, Cảnh báo, Thông tin) đặt ở đầu vùng làm việc chính.
+- Cơ chế tự ẩn sau ~8s đối với thông báo thành công; thông báo lỗi/cảnh báo được ghim cố định đến khi người dùng chủ động đóng hoặc thao tác thành công kế tiếp.
+- Tích hợp `st.toast` cho phản hồi nhanh và expander **"Nhật ký thao tác"** lưu vết 20 thông báo gần nhất kèm mốc thời gian rõ ràng.
+
+### 🚕 Thẻ Kết quả Điều phối Nổi bật (Hạng mục C)
+- Đặt ngay trên bản đồ điều phối với nền xanh nhạt `#EFF6FF` và viền trái 6px, hiển thị tiêu đề lớn, 4 chỉ số KPI quan trọng (Tài xế, ETA, Đỉnh duyệt, Thời gian tính toán) và breadcrumb lộ trình.
+- Thẻ tồn tại xuyên suốt qua các thao tác Undo/Redo/Hoàn thành với nhãn trạng thái trực quan ("Đang chạy", "Đã hoàn tác", "Chuyến đã hoàn thành").
+- Thẻ cảnh báo thân thiện khi không thể ghép chuyến (giải thích nguyên nhân dễ hiểu và gợi ý hành động xử lý).
+
+### 🔍 Bộ lọc dữ liệu & Phân trang đa năng (Hạng mục D)
+- Bộ lọc mở sẵn (`st.expander`) cho toàn bộ 4 bảng dữ liệu:
+  - **Lịch sử chuyến**: Lọc theo trạng thái, tài xế, mã chuyến/yêu cầu, điểm đón/trả, khoảng ETA (slider) và sắp xếp mới nhất/cũ nhất.
+  - **Tài xế**: Lọc trạng thái, tìm tên/mã tài xế, vị trí hiện tại.
+  - **Hàng đợi FIFO & Tuyến đường**: Tìm kiếm theo tên địa danh.
+- Nút **"Xóa bộ lọc"** khôi phục nhanh, dòng đếm **"Hiển thị X/Y bản ghi"**, và trạng thái rỗng (empty state) thân thiện khi không có kết quả khớp.
+- Hỗ trợ phân trang linh hoạt (10/25/50 dòng) cho danh sách chuyến xe.
+
+### 🗺️ Mạng lưới giao thông trực quan & Điều khiển Zoom
 - Đồ thị hiển thị trực quan các đỉnh giao thông và cung đường một chiều có trọng số di chuyển.
 - Tự động đánh dấu trạng thái tài xế trên từng nút giao thông (viền xanh lá: tài xế sẵn sàng; viền đỏ: tài xế đang bận; viền cam: điểm đón đang chờ).
-- Bảng tra cứu cung đường và danh sách tài xế theo thời gian thực.
-
-### ⚡ Trung tâm điều phối thông minh
-- Khởi tạo cuốc xe mới với điểm đón và điểm trả khách rõ ràng, tự động xác thực tính liên thông của tuyến đường.
-- Hàng đợi FIFO đảm bảo yêu cầu đến trước luôn được xử lý trước.
-- Thuật toán tự động tìm tài xế rảnh có thời gian tiếp cận khách hàng ngắn nhất (ETA nhỏ nhất), trả về lộ trình chi tiết từng nút.
-- Hỗ trợ ghép từng yêu cầu hoặc "Ghép tất cả" toàn bộ hàng đợi khả thi.
+- Cụm điều khiển Thu nhỏ (-), Phóng to (+), Vừa khung (100%) và slider zoom mượt mà không phụ thuộc CDN.
 
 ### ↩️ Lịch sử thao tác hoàn tác / làm lại (Undo / Redo)
 - Áp dụng cấu trúc dữ liệu **2 Ngăn xếp (Dual-Stack)**: `undo_stack` và `redo_stack`.
-- Thao tác Undo đưa cuốc xe vừa gán về lại đầu hàng đợi FIFO và khôi phục tài xế về trạng thái rảnh (`free`).
+- Thao tác Undo đưa chuyến xe vừa gán về lại đầu hàng đợi FIFO và khôi phục tài xế về trạng thái rảnh (`free`).
 - Redo cho phép khôi phục lại ngay lần điều phối vừa hoàn tác.
 - Tự động làm mới ngăn xếp khi có thao tác làm biến đổi trạng thái (như hoàn thành chuyến xe).
 
@@ -165,7 +186,7 @@ uv run pytest -v
 
 Kết quả kiểm thử chuẩn:
 ```text
-============================= 136 passed in 4.03s ==============================
+============================= 144 passed in 8.93s ==============================
 ```
 
 ---
