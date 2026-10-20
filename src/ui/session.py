@@ -2,7 +2,7 @@
 
 Nguyên tắc (CONTRACT mục 7):
 - Dispatcher chỉ khởi tạo MỘT LẦN cho mỗi phiên và giữ trong session_state, không nạp lại
-  từ đĩa ở mỗi lần rerun, để hai ngăn xếp Undo/Redo không bị mất.
+  từ đĩa ở mỗi lần rerun.
 - Sau mỗi thao tác thành công gọi save_all(export_state()).
 - Mặc định chạy Backend thật (RIDE_DISPATCH_BACKEND="real"), ném lỗi rõ ràng nếu dữ liệu hỏng.
   Hỗ trợ chạy backend giả lập bằng RIDE_DISPATCH_BACKEND="mock" hoặc tự động rơi về mock khi đặt RIDE_DISPATCH_BACKEND="auto".
@@ -73,7 +73,7 @@ def init_session() -> None:
 
 
 def reload_from_disk() -> None:
-    """Bỏ phiên hiện tại và nạp lại từ đĩa (mất lịch sử Undo/Redo)."""
+    """Bỏ phiên hiện tại và nạp lại từ đĩa."""
     for k in (K_DISPATCHER, K_STORAGE, K_STRATEGIES, K_LOCATIONS, K_LAST, K_NOTIFICATIONS):
         st.session_state.pop(k, None)
     init_session()

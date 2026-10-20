@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from core.road_graph import RoadGraph
 from core.strategies import STRATEGIES, MatchResult, shortest_path
-from models import ASSIGNED, BUSY, COMPLETED, FREE, QUEUED
+from models import ASSIGNED, BUSY, CANCELLED, COMPLETED, FREE, QUEUED
 
 
 # ----------------------------------------------------------------- thực thể giả
@@ -48,8 +48,6 @@ class FakeDispatcher:
         self.trips: list[MockTrip] = []
         self.all_requests: dict[str, MockRequest] = {}
         self.queue: list[MockRequest] = []
-        self._undo: list = []
-        self._redo: list = []
         self._seq = {"R": 0, "T": 0, "D": len(drivers)}
         self.last_match_result: MatchResult | None = None
         self.last_failure: str | None = None
@@ -129,8 +127,6 @@ class FakeDispatcher:
         self.drivers[res.driver_id].status = BUSY
         trip = MockTrip(self._new_id("T"), req.id, res.driver_id, res.eta)
         self.trips.append(trip)
-        self._undo.append((trip, res.driver_id, req))
-        self._redo.clear()
         return trip
 
     def dispatch_all(self, strategy) -> list[MockTrip]:
@@ -166,41 +162,27 @@ class FakeDispatcher:
         trip = next((t for t in self.trips if t.id == trip_id), None)
         if trip is None or trip.status != ASSIGNED:
             return False
+        drv = self.drivers.get(trip.driver_id)
+        req = self.all_requests.get(trip.request_id)
+        if drv is None or req is None:
+            return False
         trip.status = COMPLETED
-        drv = self.drivers[trip.driver_id]
         drv.status = FREE
-        drv.node = self.all_requests[trip.request_id].dropoff_node
-        self._undo.clear()
-        self._redo.clear()
+        drv.node = req.dropoff_node
         return True
 
-    # --- undo / redo
-    def can_undo(self) -> bool:
-        return bool(self._undo)
-
-    def can_redo(self) -> bool:
-        return bool(self._redo)
-
-    def undo(self) -> bool:
-        if not self._undo:
+    def cancel_trip(self, trip_id: str) -> bool:
+        trip = next((t for t in self.trips if t.id == trip_id), None)
+        if trip is None or trip.status != ASSIGNED:
             return False
-        trip, driver_id, req = self._undo.pop()
-        self.trips.remove(trip)
-        self.drivers[driver_id].status = FREE
-        req.status = QUEUED
-        self.queue.insert(0, req)
-        self._redo.append((trip, driver_id, req))
-        return True
-
-    def redo(self) -> bool:
-        if not self._redo:
+        drv = self.drivers.get(trip.driver_id)
+        req = self.all_requests.get(trip.request_id)
+        if drv is None or req is None:
             return False
-        trip, driver_id, req = self._redo.pop()
-        self.queue.remove(req)
-        req.status = ASSIGNED
-        self.drivers[driver_id].status = BUSY
-        self.trips.append(trip)
-        self._undo.append((trip, driver_id, req))
+        trip.status = CANCELLED
+        drv.status = FREE
+        req.status = CANCELLED
+        self.queue = [r for r in self.queue if r.id != req.id]
         return True
 
     # --- snapshot & trạng thái

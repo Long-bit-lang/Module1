@@ -7,7 +7,7 @@ import pytest
 from core.dispatcher import Dispatcher
 from core.json_storage import JsonStorage
 from core.strategies import DijkstraPerDriver, ReverseDijkstra
-from models import ASSIGNED, BUSY, COMPLETED, FREE
+from models import ASSIGNED, BUSY, CANCELLED, COMPLETED, FREE
 
 
 def test_seed_load_dispatch_save_and_reload(tmp_path: Path):
@@ -53,27 +53,41 @@ def test_tiebreak_eta_a1_and_a2_agree_on_seed(tmp_path: Path):
         assert (trip.driver_id, trip.eta) == ("D1", 6.0)
 
 
-def test_undo_then_save_reload_preserves_queue_order_resets_undo(tmp_path: Path):
-    """Undo rồi save/reload: thứ tự hàng đợi bảo toàn (R3 về đầu), lịch sử Undo không lưu xuống JSON."""
+def test_cancel_seed_t2_assigned_trip_save_and_reload(tmp_path: Path):
+    """Seed -> hủy T2 (seed có T2 ASSIGNED của D3) -> save -> reload: D3 FREE, T2 CANCELLED, R2 CANCELLED, hàng đợi vẫn R3, R4."""
     storage = JsonStorage(runtime_dir=tmp_path)
     dispatcher = Dispatcher.from_state(storage.load_all())
 
-    trip = dispatcher.dispatch_next(DijkstraPerDriver())
-    assert trip is not None
-    assert [r.id for r in dispatcher.queue] == ["R4"]
-
-    assert dispatcher.undo() is True
+    # Kiểm tra trạng thái seed ban đầu
+    assert dispatcher.drivers["D3"].status == BUSY
+    d3_node = dispatcher.drivers["D3"].node
+    t2 = next(t for t in dispatcher.trips if t.id == "T2")
+    assert t2.status == ASSIGNED
+    assert dispatcher.all_requests["R2"].status == ASSIGNED
     assert [r.id for r in dispatcher.queue] == ["R3", "R4"]
 
-    storage.save_all(dispatcher.export_state())
+    # Hủy chuyến T2
+    assert dispatcher.cancel_trip("T2") is True
+    assert t2.status == CANCELLED
+    assert dispatcher.drivers["D3"].status == FREE
+    assert dispatcher.drivers["D3"].node == d3_node  # Không đổi vị trí tài xế
+    assert dispatcher.all_requests["R2"].status == CANCELLED
+    assert [r.id for r in dispatcher.queue] == ["R3", "R4"]
 
+    # Lưu xuống đĩa và nạp lại
+    storage.save_all(dispatcher.export_state())
     reloaded = Dispatcher.from_state(storage.load_all())
+
+    assert reloaded.drivers["D3"].status == FREE
+    assert reloaded.drivers["D3"].node == d3_node
+    reloaded_t2 = next(t for t in reloaded.trips if t.id == "T2")
+    assert reloaded_t2.status == CANCELLED
+    assert reloaded.all_requests["R2"].status == CANCELLED
     assert [r.id for r in reloaded.queue] == ["R3", "R4"]
-    assert reloaded.can_undo() is False  # Lịch sử Undo thuộc về phiên runtime, không lưu trong JSON
 
 
 def test_complete_trip_moves_driver_and_persists(tmp_path: Path):
-    """Hoàn thành chuyến giải phóng tài xế tại điểm trả khách, xóa lịch sử Undo và lưu đúng."""
+    """Hoàn thành chuyến giải phóng tài xế tại điểm trả khách và lưu đúng."""
     storage = JsonStorage(runtime_dir=tmp_path)
     dispatcher = Dispatcher.from_state(storage.load_all())
 
@@ -85,8 +99,6 @@ def test_complete_trip_moves_driver_and_persists(tmp_path: Path):
     assert dispatcher.complete_trip(trip.id) is True
     assert dispatcher.drivers[trip.driver_id].node == "N6"
     assert dispatcher.drivers[trip.driver_id].status == FREE
-    assert dispatcher.can_undo() is False
-    assert dispatcher.can_redo() is False
 
     storage.save_all(dispatcher.export_state())
 

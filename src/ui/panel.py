@@ -11,7 +11,7 @@ import html
 import streamlit as st
 
 from . import session as S
-from .constants import ASSIGNED, BUSY, FREE, status_label
+from .constants import ANIM_STATUS_PAUSED, ASSIGNED, BUSY, CANCELLED, FREE, status_label
 
 
 # ── Callbacks cho mục Đặt xe ──────────────────────────────────────────────────
@@ -176,28 +176,52 @@ def _on_dispatch_all() -> None:
     )
 
 
-def _on_undo() -> None:
-    ok, done = S.perform(lambda: S.dispatcher().undo())
+def _on_cancel_trip(trip_id: str) -> None:
+    st.session_state[f"show_cancel_trip_dialog_{trip_id}"] = False
+    ok, done = S.perform(lambda: S.dispatcher().cancel_trip(trip_id))
     if ok:
         if done and st.session_state.get(S.K_LAST):
-            st.session_state[S.K_LAST]["status_tag"] = "Đã hoàn tác"
+            last_trip = st.session_state[S.K_LAST].get("trip")
+            if last_trip and last_trip.id == trip_id:
+                st.session_state[S.K_LAST]["status_tag"] = "Chuyến đã hủy"
+        # Nếu đang phát animation cho chuyến đó thì dừng và ẩn nút phát
+        st.session_state["anim_playing"] = False
+        st.session_state["anim_status"] = ANIM_STATUS_PAUSED
+        st.session_state["_current_anim_step"] = 0
+        try:
+            st.session_state["anim_step"] = 0
+        except Exception:
+            pass
         S.flash(
             "success" if done else "warning",
-            "Đã hoàn tác lần điều phối gần nhất: yêu cầu đã quay lại đầu hàng đợi FIFO."
+            f"Chuyến {trip_id} đã được hủy thành công. Tài xế được giải phóng tại vị trí hiện tại."
             if done
-            else "Không có gì để hoàn tác.",
+            else f"Không thể hủy chuyến {trip_id}.",
         )
 
 
-def _on_redo() -> None:
-    ok, done = S.perform(lambda: S.dispatcher().redo())
-    if ok:
-        if done and st.session_state.get(S.K_LAST):
-            st.session_state[S.K_LAST]["status_tag"] = "Đã làm lại (Redo)"
-        S.flash(
-            "success" if done else "warning",
-            "Đã làm lại lần điều phối vừa hoàn tác." if done else "Không có gì để làm lại.",
+@st.dialog("⚠️ Xác nhận hủy chuyến")
+def _confirm_cancel_trip_dialog(trip_id: str) -> None:
+    st.markdown(
+        f"Bạn có chắc chắn muốn hủy chuyến **{html.escape(trip_id)}** không?\n\n"
+        "- **Tài xế được giải phóng tại vị trí hiện tại** (không di chuyển tới điểm trả khách).\n"
+        "- **Yêu cầu bị hủy và không thể khôi phục** (không quay lại hàng đợi)."
+    )
+    c_yes, c_no = st.columns(2)
+    with c_yes:
+        st.button(
+            "Xác nhận hủy",
+            key=f"btn_confirm_cancel_trip_{trip_id}",
+            on_click=_on_cancel_trip,
+            args=(trip_id,),
+            type="primary",
+            width="stretch",
         )
+    with c_no:
+        if st.button("Bỏ qua", key=f"btn_dismiss_cancel_trip_{trip_id}", width="stretch"):
+            st.session_state[f"show_cancel_trip_dialog_{trip_id}"] = False
+            st.rerun()
+
 
 
 def _on_complete(trip_id: str) -> None:
@@ -373,25 +397,6 @@ def render_action_panel() -> None:
                     width="stretch",
                 )
 
-            st.caption("Lịch sử hoàn tác (Undo / Redo):")
-            col_un, col_re = st.columns(2)
-            with col_un:
-                st.button(
-                    "↩ Undo",
-                    on_click=_on_undo,
-                    key="btn_undo",
-                    disabled=not d.can_undo(),
-                    width="stretch",
-                )
-            with col_re:
-                st.button(
-                    "↪ Redo",
-                    on_click=_on_redo,
-                    key="btn_redo",
-                    disabled=not d.can_redo(),
-                    width="stretch",
-                )
-
             st.divider()
             st.markdown(f"<b>Chuyến đang chạy ({len(active_trips)}):</b>", unsafe_allow_html=True)
             if active_trips:
@@ -407,13 +412,26 @@ def render_action_panel() -> None:
                         """,
                         unsafe_allow_html=True,
                     )
-                    st.button(
-                        f"Hoàn thành chuyến {t.id}",
-                        key=f"btn_complete_{t.id}",
-                        on_click=_on_complete,
-                        args=(t.id,),
-                        type="secondary",
-                        width="stretch",
-                    )
+                    c_comp, c_canc = st.columns(2)
+                    with c_comp:
+                        st.button(
+                            "Hoàn thành",
+                            key=f"btn_complete_{t.id}",
+                            on_click=_on_complete,
+                            args=(t.id,),
+                            type="secondary",
+                            width="stretch",
+                        )
+                    with c_canc:
+                        if st.button(
+                            "Hủy chuyến",
+                            key=f"btn_cancel_trip_{t.id}",
+                            type="secondary",
+                            width="stretch",
+                        ):
+                            st.session_state[f"show_cancel_trip_dialog_{t.id}"] = True
+
+                    if st.session_state.get(f"show_cancel_trip_dialog_{t.id}"):
+                        _confirm_cancel_trip_dialog(t.id)
             else:
                 st.caption("Không có chuyến nào đang hoạt động.")

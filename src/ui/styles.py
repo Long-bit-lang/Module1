@@ -116,6 +116,11 @@ html, body, [class*="css"] {
     color: #475569;
     border: 1px solid #CBD5E1;
 }
+.badge-cancelled {
+    background: #FEF2F2;
+    color: #991B1B;
+    border: 1px solid #FECACA;
+}
 
 /* ── 3. Hộp thông báo rỗng (Empty State) ───────────────────────────────────── */
 .empty-state-box {

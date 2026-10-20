@@ -34,36 +34,52 @@ def test_app_starts_without_exception(app):
     assert app.session_state["main_nav"] == "Quản lý dữ liệu"
 
 
-def test_full_flow_submit_dispatch_undo_redo_complete(app):
-    # Tạo yêu cầu qua giao diện
+def test_full_flow_submit_dispatch_cancel_and_complete(app):
+    # 1. Tạo yêu cầu qua giao diện
     _pick(app, "req_pickup", "N3")
     _pick(app, "req_dropoff", "N7")
     app.button(key="btn_submit").click().run()
     assert len(_d(app).queue_snapshot()) == 1
 
-    # Điều phối -> có chuyến, tài xế bận
+    # 2. Điều phối -> có chuyến, tài xế bận
     app.button(key="btn_dispatch").click().run()
     assert not app.exception
     assert len(_d(app).trips_snapshot()) == 1 and len(_d(app).queue_snapshot()) == 0
     assert app.session_state["storage"].save_count >= 2  # tự lưu sau mỗi thao tác
 
-    # Undo -> yêu cầu về đầu hàng, tài xế rảnh; Redo -> ngược lại
-    app.button(key="btn_undo").click().run()
-    assert len(_d(app).trips_snapshot()) == 0 and len(_d(app).queue_snapshot()) == 1
-    app.button(key="btn_redo").click().run()
     trip = _d(app).trips_snapshot()[0]
+    # Xác nhận không có nút Undo/Redo nào
+    assert not any(b.key in ("btn_undo", "btn_redo") for b in app.button)
 
-    # Hoàn thành chuyến
-    app.button(key=f"btn_complete_{trip.id}").click().run()
-    assert _d(app).trips_snapshot()[0].status == "completed"
+    # 3. Hủy chuyến qua giao diện với bước xác nhận
+    app.button(key=f"btn_cancel_trip_{trip.id}").click().run()
+    assert not app.exception
+    # Dialog xác nhận xuất hiện -> nhấn xác nhận hủy
+    app.button(key=f"btn_confirm_cancel_trip_{trip.id}").click().run()
+    assert not app.exception
+
+    # Kiểm tra trạng thái sau khi hủy (D1 = A: request chuyển CANCELLED, KHÔNG quay lại queue)
+    cancelled_trip = _d(app).trips_snapshot()[0]
+    assert cancelled_trip.status == "cancelled"
+    assert _d(app).drivers_snapshot()[cancelled_trip.driver_id].status == "free"
+    assert _d(app).all_requests[cancelled_trip.request_id].status == "cancelled"
+    assert len(_d(app).queue_snapshot()) == 0
+
+    # Chuyến đã hủy không còn nút Hoàn thành hay Hủy chuyến
+    assert not any(b.key == f"btn_complete_{trip.id}" for b in app.button)
+    assert not any(b.key == f"btn_cancel_trip_{trip.id}" for b in app.button)
 
 
-def test_dispatcher_survives_rerun_so_undo_history_is_kept(app):
+def test_dispatcher_survives_rerun_state_preserved(app):
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
     app.button(key="btn_submit").click().run()
     app.button(key="btn_dispatch").click().run()
-    assert _d(app).can_undo()
-    app.run()  # rerun thuần túy không được làm mất lịch sử Undo
-    assert _d(app).can_undo()
+    assert len(_d(app).trips_snapshot()) == 1
+    app.run()  # rerun thuần túy bảo toàn trạng thái dispatcher
+    assert len(_d(app).trips_snapshot()) == 1
+    assert not any(b.key in ("btn_undo", "btn_redo") for b in app.button)
+
 
 
 def test_same_pickup_dropoff_shows_error(app):
@@ -114,6 +130,42 @@ def test_real_backend_dispatch_persists_and_tiebreaks(real_app, tmp_path):
     trip = _d(real_app).trips_snapshot()[-1]
     assert (trip.driver_id, trip.eta) == ("D1", 6.0)  # hòa ETA thì chọn ID nhỏ nhất
     assert '"T3"' in (tmp_path / "trips.json").read_text(encoding="utf-8")
+
+
+def test_real_backend_cancel_assigned_trip_persists(real_app, tmp_path):
+    """UI AppTest với backend real: Hủy chuyến T2 (ASSIGNED trong seed) qua dialog xác nhận và lưu vào đĩa."""
+    assert not real_app.exception
+    # Seed data có T2 đang ASSIGNED cho D3
+    assigned_trips = [t for t in _d(real_app).trips_snapshot() if t.status == "assigned"]
+    assert any(t.id == "T2" for t in assigned_trips)
+    assert _d(real_app).drivers_snapshot()["D3"].status == "busy"
+
+    # Nhấn Hủy chuyến T2
+    real_app.button(key="btn_cancel_trip_T2").click().run()
+    assert not real_app.exception
+    # Xác nhận trong dialog
+    real_app.button(key="btn_confirm_cancel_trip_T2").click().run()
+    assert not real_app.exception
+
+    # Kiểm tra trạng thái trong bộ nhớ
+    t2 = next(t for t in _d(real_app).trips_snapshot() if t.id == "T2")
+    assert t2.status == "cancelled"
+    assert _d(real_app).drivers_snapshot()["D3"].status == "free"
+    assert _d(real_app).all_requests["R2"].status == "cancelled"
+    assert not any(r.id == "R2" for r in _d(real_app).queue_snapshot())
+
+    # Kiểm tra trạng thái đã lưu vào file trips.json và requests.json trên đĩa
+    trips_json = (tmp_path / "trips.json").read_text(encoding="utf-8")
+    assert '"status": "cancelled"' in trips_json
+    requests_json = (tmp_path / "requests.json").read_text(encoding="utf-8")
+    assert '"R2"' in requests_json
+
+    # Nút thao tác hoàn thành/hủy cho T2 không còn hiển thị
+    assert not any(b.key == "btn_cancel_trip_T2" for b in real_app.button)
+    assert not any(b.key == "btn_complete_T2" for b in real_app.button)
+    # Không còn widget undo/redo nào
+    assert not any(b.key in ("btn_undo", "btn_redo") for b in real_app.button)
+
 
 
 def test_tab_selection_persists_on_widget_interaction(app):
@@ -331,35 +383,33 @@ def test_map_canvas_containers_and_zoom_levels(app):
     assert "map_dispatch_canvas" in container_keys
 
 
-def test_page_switch_preserves_dispatcher_and_undo(app):
-    """Ràng buộc 5: Đổi trang không làm mất trạng thái dispatcher và ngăn xếp Undo/Redo."""
+def test_page_switch_preserves_dispatcher_state_and_allows_cancel(app):
+    """Ràng buộc 5: Đổi trang không làm mất trạng thái dispatcher và cho phép hủy chuyến."""
     # 1. Tạo yêu cầu và điều phối chuyến trên Action panel
     _pick(app, "req_pickup", "N3")
     _pick(app, "req_dropoff", "N7")
     app.button(key="btn_submit").click().run()
     app.button(key="btn_dispatch").click().run()
-    assert _d(app).can_undo()
     assert len(_d(app).trips_snapshot()) == 1
 
     # 2. Chuyển sang trang "Quản lý dữ liệu"
     app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
     assert app.session_state["main_nav"] == "Quản lý dữ liệu"
-    assert _d(app).can_undo()
     assert len(_d(app).trips_snapshot()) == 1
 
     # 3. Chuyển sang trang "Đối chuẩn thuật toán"
     app.sidebar.radio(key="main_nav").set_value("Đối chuẩn thuật toán").run()
     assert app.session_state["main_nav"] == "Đối chuẩn thuật toán"
-    assert _d(app).can_undo()
+    assert len(_d(app).trips_snapshot()) == 1
 
-    # 4. Chuyển lại "Điều phối chuyến" và thực hiện Undo thành công
+    # 4. Chuyển lại "Điều phối chuyến" và thực hiện Hủy chuyến thành công
     app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
     assert app.session_state["main_nav"] == "Điều phối chuyến"
-    assert _d(app).can_undo()
-    app.button(key="btn_undo").click().run()
-    assert not _d(app).can_undo()
-    assert len(_d(app).trips_snapshot()) == 0
-    assert len(_d(app).queue_snapshot()) == 1
+    trip = _d(app).trips_snapshot()[0]
+    app.button(key=f"btn_cancel_trip_{trip.id}").click().run()
+    app.button(key=f"btn_confirm_cancel_trip_{trip.id}").click().run()
+    assert _d(app).trips_snapshot()[0].status == "cancelled"
+
 
 
 def test_panel_toggle_changes_panel_open(app):
@@ -656,8 +706,8 @@ def test_map_animation_pause_stops_playback(app):
     assert 0 < app.session_state["anim_step"] < 30
 
 
-def test_map_animation_undo_hides_playback_controls(app):
-    """Kiểm thử xử lý biên: sau khi Undo thì ẩn nút phát (anim_play) và thông báo 'chuyến đã hoàn tác'."""
+def test_map_animation_cancel_trip_hides_playback_controls(app):
+    """Kiểm thử xử lý biên: sau khi Hủy chuyến thì ẩn nút phát (anim_play) và cập nhật thẻ kết quả."""
     app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
     assert not app.exception
 
@@ -671,16 +721,19 @@ def test_map_animation_undo_hides_playback_controls(app):
     assert not app.exception
     assert any(b.key == "anim_play" for b in app.button)
 
-    # Nhấn Hoàn tác (btn_undo)
-    app.button(key="btn_undo").click().run()
+    trip = _d(app).trips_snapshot()[0]
+    # Nhấn Hủy chuyến và xác nhận
+    app.button(key=f"btn_cancel_trip_{trip.id}").click().run()
+    app.button(key=f"btn_confirm_cancel_trip_{trip.id}").click().run()
     assert not app.exception
 
-    # Nút phát anim_play phải bị ẩn sau khi hoàn tác
+    # Nút phát anim_play phải bị ẩn sau khi hủy chuyến
     assert not any(b.key == "anim_play" for b in app.button)
 
-    # Có thông báo chuyến đã hoàn tác
-    all_text = " ".join([m.value for m in app.info] + [m.value for m in app.warning] + [m.value for m in app.markdown])
-    assert "chuyến" in all_text.lower() and "hoàn tác" in all_text.lower()
+    # Thẻ kết quả điều phối gắn nhãn 'Chuyến đã hủy'
+    assert app.session_state.get("last_dispatch", {}).get("status_tag") == "Chuyến đã hủy"
+
+
 
 
 def test_build_animation_ticks_unit_contract():

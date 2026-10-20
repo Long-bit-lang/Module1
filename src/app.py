@@ -6,6 +6,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from models import CANCELLED
 from ui import session, tab_benchmark, tab_data, tab_dispatch
 from ui.styles import CUSTOM_CSS
 
@@ -57,6 +58,12 @@ with st.sidebar:
     ):
         st.session_state["panel_open"] = not st.session_state.get("panel_open", True)
         st.rerun()
+
+    try:
+        cancelled_count = sum(1 for t in session.dispatcher().trips_snapshot() if t.status == CANCELLED)
+        st.caption(f"⛔ Số chuyến đã hủy: **{cancelled_count}**")
+    except Exception:
+        pass
 
 # ── Flash messages (ngay trước nội dung trang chính) ──────────────────────────
 session.render_flash()

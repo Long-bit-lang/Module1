@@ -1,4 +1,4 @@
-"""TV5 - Tab "Điều phối chuyến": yêu cầu, hàng đợi FIFO, điều phối, Undo/Redo, quản lý chuyến."""
+"""TV5 - Tab "Điều phối chuyến": yêu cầu, hàng đợi FIFO, điều phối, quản lý chuyến."""
 from __future__ import annotations
 
 import html
@@ -9,7 +9,7 @@ import streamlit as st
 
 from . import session as S
 from .components import get_status_badge_html, page_header, render_empty_state, render_route_breadcrumb
-from .constants import ASSIGNED, COMPLETED, FREE, status_label
+from .constants import ASSIGNED, CANCELLED, COMPLETED, FREE, status_label
 
 _REASON = {
     "empty_queue": "Hàng đợi yêu cầu đang trống. Vui lòng tạo yêu cầu đặt xe mới trước khi ghép chuyến.",
@@ -55,30 +55,6 @@ def _on_dispatch_all() -> None:
         "success" if trips else "warning",
         f"Đã ghép {len(trips)} chuyến. " + (_REASON.get(why, "") if why != "empty_queue" else ""),
     )
-
-
-def _on_undo() -> None:
-    ok, done = S.perform(lambda: S.dispatcher().undo())
-    if ok:
-        if done and st.session_state.get(S.K_LAST):
-            st.session_state[S.K_LAST]["status_tag"] = "Đã hoàn tác"
-        st.session_state["anim_playing"] = False
-        st.session_state["anim_step"] = 0
-        S.flash(
-            "success" if done else "warning",
-            "Đã hoàn tác lần điều phối gần nhất: yêu cầu đã quay lại đầu hàng đợi FIFO."
-            if done
-            else "Không có gì để hoàn tác.",
-        )
-
-
-def _on_redo() -> None:
-    ok, done = S.perform(lambda: S.dispatcher().redo())
-    if ok:
-        S.flash(
-            "success" if done else "warning",
-            "Đã làm lại lần điều phối vừa hoàn tác." if done else "Không có gì để làm lại.",
-        )
 
 
 def _on_cancel_request() -> None:
@@ -193,10 +169,9 @@ def _render_last_result() -> None:
     status_tag = last.get("status_tag", "Đang chạy")
 
     badge_map = {
-        "Đã hoàn tác": "badge-busy",
         "Chuyến đã hoàn thành": "badge-completed",
+        "Chuyến đã hủy": "badge-cancelled",
         "Đang chạy": "badge-assigned",
-        "Đã làm lại (Redo)": "badge-assigned",
     }
     badge_cls = badge_map.get(status_tag, "badge-default")
     status_badge_html = f'<span class="badge-status {badge_cls}">{html.escape(status_tag)}</span>'
@@ -254,31 +229,26 @@ def _render_map(d, queue, drivers) -> None:
     last = st.session_state.get(S.K_LAST)
     trips = d.trips_snapshot()
 
-    # 1. Kiểm tra trạng thái hoàn tác của chuyến vừa ghép gần nhất
-    is_last_undone = bool(last and last.get("status_tag") == "Đã hoàn tác")
-
-    # 2. Xây dựng danh sách chuyến có thể phát lại
+    # 1. Xây dựng danh sách chuyến có thể phát lại (bỏ qua chuyến đã hủy)
     trip_options = []
     trip_map = {}
 
-    if last and last.get("trip") and not is_last_undone and not last.get("failed"):
+    if last and last.get("trip") and not last.get("failed") and last.get("status_tag") != "Chuyến đã hủy":
         last_trip = last.get("trip")
-        if last_trip:
+        if last_trip and last_trip.status != CANCELLED:
             lbl_last = f"Chuyến vừa ghép: {last_trip.id} (Xe {last_trip.driver_id} ↔ Khách {last_trip.request_id})"
             trip_options.append(lbl_last)
             trip_map[lbl_last] = ("last", last)
 
     for t in reversed(trips):
-        last_t = last.get("trip") if (last and not is_last_undone) else None
+        if t.status == CANCELLED:
+            continue
+        last_t = last.get("trip") if (last and last.get("status_tag") != "Chuyến đã hủy") else None
         if last_t and t.id == last_t.id:
             continue
         lbl_t = f"Lịch sử: Chuyến {t.id} (Xe {t.driver_id} ↔ Khách {t.request_id})"
         trip_options.append(lbl_t)
         trip_map[lbl_t] = ("history", t)
-
-    # 3. Xử lý trường hợp vừa Undo
-    if is_last_undone:
-        st.info("ℹ️ Chuyến xe đã hoàn tác. Vui lòng ghép chuyến mới để phát lại lộ trình.")
 
     # 4. Xác định chuyến được chọn để phát lại
     selected_type = None
@@ -494,8 +464,8 @@ def _render_map(d, queue, drivers) -> None:
         if current_tick_info:
             st.session_state["anim_progress"] = current_tick_info.progress_pct
 
-        # Bảng điều khiển animation (chỉ hiển thị khi có chuyến và không bị hoàn tác)
-        if total_frames > 0 and not is_last_undone:
+        # Bảng điều khiển animation (chỉ hiển thị khi có chuyến hợp lệ)
+        if total_frames > 0:
             with st.container(key="anim_controls_box", border=True):
                 c1, c2, c3, c_skip, c4, c5 = st.columns([1.1, 1.2, 1.2, 1.3, 1.1, 2.3], vertical_alignment="center")
                 with c1:
@@ -583,9 +553,9 @@ def _render_map(d, queue, drivers) -> None:
                 st.caption(f"⏱️ Tổng thời gian phát ≈ {est_sec:.1f} giây")
 
         # Lấy DOT đồ thị đã được tiền kết xuất trong cache (YÊU CẦU 3.a)
-        if total_frames > 0 and not is_last_undone and current_tick_info and current_tick_info.dot_string:
+        if total_frames > 0 and current_tick_info and current_tick_info.dot_string:
             dot_dispatch = current_tick_info.dot_string
-        elif total_frames > 0 and not is_last_undone and current_tick_info:
+        elif total_frames > 0 and current_tick_info:
             dot_dispatch = build_dot(
                 edges=d.graph.edges(),
                 drivers=drivers,
@@ -598,9 +568,9 @@ def _render_map(d, queue, drivers) -> None:
                 custom_edges=current_tick_info.custom_edges,
             )
         else:
-            # Chế độ bản đồ tĩnh cơ bản (xem trước hoặc khi chưa có chuyến / đã hoàn tác)
+            # Chế độ bản đồ tĩnh cơ bản (xem trước hoặc khi chưa có chuyến)
             preview_routes = []
-            if not is_last_undone and queue:
+            if queue:
                 free = {x.id: x.node for x in drivers.values() if x.status == FREE}
                 name = st.session_state.get("strategy_name") or next(iter(S.strategies()))
                 if free:
@@ -697,17 +667,19 @@ def render() -> None:
     trips = d.trips_snapshot()
     free_count = sum(1 for x in drivers.values() if x.status == FREE)
     active_trips_count = sum(1 for t in trips if t.status == ASSIGNED)
+    cancelled_trips_count = sum(1 for t in trips if t.status == CANCELLED)
     available_strats = S.strategies()
     current_strat = st.session_state.get("strategy_name") or (next(iter(available_strats)) if available_strats else "A1")
 
     page_header(
         icon="🚕",
         title="Điều phối chuyến",
-        subtitle="Nhận yêu cầu, ghép tài xế tối ưu và hoàn tác thao tác",
+        subtitle="Nhận yêu cầu, ghép tài xế tối ưu và quản lý chuyến đi",
         chips=[
             ("Hàng đợi", f"{len(queue)}"),
             ("Xe rảnh", f"{free_count}"),
             ("Chuyến đang chạy", f"{active_trips_count}"),
+            ("Đã hủy", f"{cancelled_trips_count}"),
             ("Chiến lược", f"{current_strat}"),
         ],
     )
@@ -719,7 +691,7 @@ def render() -> None:
                 <div style="margin-bottom: 0.6rem; line-height: 1.65;">
                     <span class="qs-step">1</span><b>Đặt xe mới:</b> Mở bảng thao tác bên phải → chọn điểm đón & trả khách tại mục <i>"(1) Đặt xe"</i> → nhấn <b>"Gửi yêu cầu"</b>.<br>
                     <span class="qs-step">2</span><b>Ghép chuyến tối ưu:</b> Tại mục <i>"(3) Điều phối"</i> chọn thuật toán <b>A1</b> hoặc <b>A2</b> → nhấn <b>"Ghép chuyến"</b>.<br>
-                    <span class="qs-step">3</span><b>Hoàn tác & Hoàn thành:</b> Nhấn <b>"Undo"</b> để hủy gán chuyến; hoặc nhấn <b>"Hoàn thành chuyến"</b> trong danh sách đang chạy để kết thúc cuốc và giải phóng tài xế.
+                    <span class="qs-step">3</span><b>Hủy & Hoàn thành chuyến:</b> Nhấn <b>"Hủy chuyến"</b> để hủy chuyến đã ghép và giải phóng tài xế tại chỗ; hoặc nhấn <b>"Hoàn thành chuyến"</b> trong danh sách đang chạy để kết thúc cuốc khi khách tới nơi.
                 </div>
                 <div style="font-size: 0.82rem; color: #475569; border-top: 1px dashed #CBD5E1; padding-top: 0.45rem; margin-top: 0.45rem;">
                     <b>Ý nghĩa màu sắc trên bản đồ:</b> 🟢 Viền xanh lá = Xe rảnh &nbsp;|&nbsp; 🔴 Viền đỏ = Xe bận &nbsp;|&nbsp; 🟠 Viền cam = Điểm đón đang chờ &nbsp;|&nbsp; ── Xanh lá = Đón khách &nbsp;|&nbsp; ╌╌ Cam nét đứt = Chở khách
@@ -767,7 +739,7 @@ def render() -> None:
             )
         else:
             st.dataframe(_queue_table(filtered_queue), hide_index=True, width="stretch", height=150)
-        st.caption("💡 *Đặt xe mới, hủy yêu cầu, hoặc nhấn Ghép chuyến / Undo / Redo trên **Bảng thao tác bên phải**.*")
+        st.caption("💡 *Đặt xe mới, hủy yêu cầu, hoặc nhấn Ghép chuyến trên **Bảng thao tác bên phải**.*")
 
     # Hiển thị nút giải phóng nghẽn hàng nếu nguyên nhân là no_route
     if getattr(d, "last_failure", None) == "no_route" and queue:
@@ -792,7 +764,7 @@ def render() -> None:
         with r1_c1:
             st.multiselect(
                 "Trạng thái",
-                options=[ASSIGNED, COMPLETED],
+                options=[ASSIGNED, COMPLETED, CANCELLED],
                 format_func=status_label,
                 key="flt_trips_status",
             )

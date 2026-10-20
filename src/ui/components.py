@@ -28,6 +28,7 @@ from .constants import (
     ASSIGNED,
     BASE_TICK_DELAY_SEC,
     BUSY,
+    CANCELLED,
     COMPLETED,
     FREE,
     MAX_TICKS_PER_EDGE,
@@ -141,6 +142,7 @@ def get_status_badge_html(status: str) -> str:
         QUEUED: "badge-queued",
         ASSIGNED: "badge-assigned",
         COMPLETED: "badge-completed",
+        CANCELLED: "badge-cancelled",
     }
     css_cls = cls_map.get(status, "badge-default")
     label = status_label(status)
