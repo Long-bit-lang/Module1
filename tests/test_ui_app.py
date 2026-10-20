@@ -29,9 +29,9 @@ def test_app_starts_without_exception(app):
     assert not app.exception
     # A1: Điều hướng bằng st.sidebar radio key="main_nav" thay cho st.tabs
     assert app.sidebar.radio(key="main_nav").options == [
-        "Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán"
+        "Điều phối chuyến", "Quản lý dữ liệu", "Đối chuẩn thuật toán"
     ]
-    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
+    assert app.session_state["main_nav"] == "Điều phối chuyến"
 
 
 def test_full_flow_submit_dispatch_cancel_and_complete(app):
@@ -169,19 +169,19 @@ def test_real_backend_cancel_assigned_trip_persists(real_app, tmp_path):
 
 
 def test_tab_selection_persists_on_widget_interaction(app):
-    # Ban đầu trang mặc định là "Quản lý dữ liệu"
-    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
-
-    # Người dùng chuyển trang sang "Điều phối chuyến" bằng st.sidebar.radio key="main_nav"
-    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    # Ban đầu trang mặc định là "Điều phối chuyến"
     assert app.session_state["main_nav"] == "Điều phối chuyến"
+
+    # Người dùng chuyển trang sang "Quản lý dữ liệu" bằng st.sidebar.radio key="main_nav"
+    app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
+    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
 
     # Người dùng tương tác với widget bên trong Action Panel (đổi điểm trả khách)
     _pick(app, "req_dropoff", "N4")
     app.run()
 
-    # Trang đang chọn vẫn là "Điều phối chuyến", radio không bị reset khi rerun
-    assert app.session_state["main_nav"] == "Điều phối chuyến"
+    # Trang đang chọn vẫn là "Quản lý dữ liệu", radio không bị reset khi rerun
+    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
 
 
 def test_reset_to_seed_restores_data(real_app, tmp_path):
@@ -190,7 +190,8 @@ def test_reset_to_seed_restores_data(real_app, tmp_path):
     real_app.button(key="btn_dispatch").click().run()
     assert '"T3"' in (tmp_path / "trips.json").read_text(encoding="utf-8")
 
-    # 2. Nhấn nút Reset về dữ liệu mẫu (Seed) và xác nhận trong dialog
+    # 2. Chuyển sang Quản lý dữ liệu, nhấn nút Reset về dữ liệu mẫu (Seed) và xác nhận trong dialog
+    real_app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
     real_app.button(key="btn_reset_seed").click().run()
     real_app.button(key="btn_confirm_reset_seed").click().run()
     assert not real_app.exception
@@ -203,6 +204,7 @@ def test_reset_to_seed_restores_data(real_app, tmp_path):
 
 def test_map_data_zoom_buttons_and_limits(app):
     """Kiểm tra nút phóng to/thu nhỏ/vừa khung trên bản đồ dữ liệu và giới hạn 50% - 300%."""
+    app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
     assert app.session_state.get("map_data_zoom_level") == 100
 
     # Phóng to (+20%)
@@ -335,7 +337,8 @@ def test_build_dot_validity_and_escaping():
 
 def test_map_canvas_containers_and_zoom_levels(app):
     """Kiểm tra khung bản đồ có key {key_prefix}_canvas và không phát sinh lỗi ở 50%, 100%, 300%."""
-    # 1. Tab mặc định là 'Quản lý dữ liệu' -> kiểm tra key 'map_data_canvas'
+    # 1. Chuyển sang 'Quản lý dữ liệu' -> kiểm tra key 'map_data_canvas'
+    app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
     assert not app.exception
     container_keys = [c.key for c in app.container if c.key]
     assert "map_data_canvas" in container_keys
@@ -452,6 +455,7 @@ def test_success_notification_persists_after_one_rerun(app):
 def test_table_filtering_reduces_rows_and_reset_restores(app):
     """Ràng buộc 5: Bộ lọc làm giảm số dòng hiển thị và nút xóa lọc khôi phục lại dữ liệu ban đầu."""
     # 1. Kiểm tra bộ lọc trên bảng Tài xế (Quản lý dữ liệu)
+    app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
     assert app.session_state["main_nav"] == "Quản lý dữ liệu"
     drivers_df = app.dataframe[1].value
     initial_driver_count = len(drivers_df)
@@ -527,21 +531,21 @@ def test_page_headers_distinct_per_page(app):
 
     Phương pháp kiểm tra: Qua `app.markdown`, trích xuất markdown có class 'page-header' và kiểm tra tiêu đề.
     """
-    # 1. Trang mặc định ban đầu: "Quản lý dữ liệu"
-    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
-    headers = [m.value for m in app.markdown if '<div class="page-header">' in m.value]
-    assert len(headers) == 1
-    assert "Quản lý dữ liệu" in headers[0]
-    assert "Điều phối chuyến" not in headers[0]
-    assert "Đối chuẩn thuật toán" not in headers[0]
-
-    # 2. Chuyển sang "Điều phối chuyến"
-    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
-    assert not app.exception
+    # 1. Trang mặc định ban đầu: "Điều phối chuyến"
+    assert app.session_state["main_nav"] == "Điều phối chuyến"
     headers = [m.value for m in app.markdown if '<div class="page-header">' in m.value]
     assert len(headers) == 1
     assert "Điều phối chuyến" in headers[0]
     assert "Quản lý dữ liệu" not in headers[0]
+    assert "Đối chuẩn thuật toán" not in headers[0]
+
+    # 2. Chuyển sang "Quản lý dữ liệu"
+    app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
+    assert not app.exception
+    headers = [m.value for m in app.markdown if '<div class="page-header">' in m.value]
+    assert len(headers) == 1
+    assert "Quản lý dữ liệu" in headers[0]
+    assert "Điều phối chuyến" not in headers[0]
     assert "Đối chuẩn thuật toán" not in headers[0]
 
     # 3. Chuyển sang "Đối chuẩn thuật toán"

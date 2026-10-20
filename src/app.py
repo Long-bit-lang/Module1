@@ -37,7 +37,7 @@ except Exception as exc:
     st.stop()
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
-NAV_PAGES = ["Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán"]
+NAV_PAGES = ["Điều phối chuyến", "Quản lý dữ liệu", "Đối chuẩn thuật toán"]
 
 with st.sidebar:
     st.markdown("### **Hệ thống Điều phối Đặt xe Thông minh**")
@@ -69,10 +69,10 @@ with st.sidebar:
 session.render_flash()
 
 # ── Render nội dung trang được chọn (A1: Bỏ st.tabs, chỉ gọi trang được chọn) ─
-if current_page == "Quản lý dữ liệu":
-    tab_data.render()
-elif current_page == "Điều phối chuyến":
+if current_page == "Điều phối chuyến":
     tab_dispatch.render()
+elif current_page == "Quản lý dữ liệu":
+    tab_data.render()
 else:
     tab_benchmark.render()
 

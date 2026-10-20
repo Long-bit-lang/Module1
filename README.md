@@ -48,8 +48,8 @@ Module1/
 │   ├── ui/                # [TV5] Giao diện người dùng Streamlit nâng cao
 │   │   ├── session.py     # Quản lý Session State & Trung tâm thông báo
 │   │   ├── panel.py       # Bảng thao tác trượt ẩn/hiện (Sliding Action Panel)
-│   │   ├── tab_data.py    # Trang 1: Quản lý dữ liệu mạng lưới & Tài xế
-│   │   ├── tab_dispatch.py# Trang 2: Điều phối chuyến xe & Lịch sử
+│   │   ├── tab_dispatch.py# Trang 1: Điều phối chuyến xe & Lịch sử
+│   │   ├── tab_data.py    # Trang 2: Quản lý dữ liệu mạng lưới & Tài xế
 │   │   ├── tab_benchmark.py# Trang 3: Đối chuẩn hiệu năng giải thuật
 │   │   ├── components.py  # Các UI Component dùng chung (KPI, breadcrumb, empty state)
 │   │   ├── graph_view.py  # Bản đồ Graphviz với lộ trình trực quan
@@ -79,7 +79,7 @@ Module1/
 ## 3. Tính năng nổi bật
 
 ### 🧭 Điều hướng dọc & Bảng thao tác ẩn/hiện (Hạng mục A)
-- **Menu dọc bên trái**: Điều hướng 3 trang ("Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán") bằng `st.sidebar.radio` với giao diện bo góc, icon và hiệu ứng active màu `#EFF6FF`, duy trì nguyên vẹn trạng thái phiên làm việc không bị reset khi tương tác.
+- **Menu dọc bên trái**: Điều hướng 3 trang ("Điều phối chuyến", "Quản lý dữ liệu", "Đối chuẩn thuật toán") bằng `st.sidebar.radio` với giao diện bo góc, icon và hiệu ứng active màu `#EFF6FF`, duy trì nguyên vẹn trạng thái phiên làm việc không bị reset khi tương tác.
 - **Bảng thao tác trượt (Sliding Action Panel)**: Cố định bên phải (width: 360px), hỗ trợ nút nổi bật/tắt (toggle) chuyển trạng thái mượt mà (transition ≤200ms). Toàn bộ widget thao tác (đặt xe, sửa/xóa tài xế, ghép chuyến, hủy chuyến, hoàn thành chuyến) tập trung tại panel giúp giao diện chính tối ưu hoàn toàn cho hiển thị KPI, bản đồ và dữ liệu ở độ phân giải 1366x768.
 
 ### 🏷️ Header trang riêng biệt & Chip thông số động (Page Header & Chips)
