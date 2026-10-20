@@ -285,6 +285,46 @@ class TestTrip:
         d = {trip: "active"}
         assert d[t2] == "active"
 
+    def test_T27d_trip_pickup_path_optional_and_validation(self):
+        """T27d: Trip hỗ trợ pickup_path tùy chọn, mặc định [], từ chối dữ liệu không hợp lệ."""
+        # 1. Mặc định là []
+        t1 = Trip("T1", "R1", "D1", 5.0)
+        assert t1.pickup_path == []
+        t2 = Trip("T2", "R1", "D1", 5.0, pickup_path=None)
+        assert t2.pickup_path == []
+
+        # 2. Khởi tạo hợp lệ với list chuỗi
+        t3 = Trip("T3", "R1", "D1", 5.0, pickup_path=["N1", "N2", "N3"])
+        assert t3.pickup_path == ["N1", "N2", "N3"]
+
+        # 3. to_dict không có khóa khi pickup_path rỗng
+        assert "pickup_path" not in t1.to_dict()
+        assert "pickup_path" not in t2.to_dict()
+
+        # 4. Từ chối kiểu dữ liệu không phải list
+        for invalid_type in ("N1", 123, ("N1", "N2"), {"N1": "N2"}, True):
+            with pytest.raises(ValueError):
+                Trip("T_err", "R1", "D1", 5.0, pickup_path=invalid_type)
+
+        # 5. Từ chối phần tử trong list không phải chuỗi hoặc rỗng
+        for invalid_item in (["N1", ""], ["N1", "   "], ["N1", 123], [None]):
+            with pytest.raises(ValueError):
+                Trip("T_err", "R1", "D1", 5.0, pickup_path=invalid_item)
+
+    def test_T27e_trip_pickup_path_roundtrip_to_dict_from_dict(self):
+        """T27e: Roundtrip to_dict và from_dict khi có pickup_path bảo toàn trọn vẹn dữ liệu."""
+        path = ["N3", "N4", "N7"]
+        t = Trip("T10", "R5", "D2", 8.5, pickup_path=path)
+        d = t.to_dict()
+        assert d["pickup_path"] == path
+
+        restored = Trip.from_dict(d)
+        assert restored == t
+        assert restored.pickup_path == path
+        assert restored.eta == 8.5
+        assert restored.driver_id == "D2"
+
+
 
 # ---------------------------------------------------------------------------
 # T28  Constants & __init__ exports

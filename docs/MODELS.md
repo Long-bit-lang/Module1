@@ -220,6 +220,7 @@ Khớp phần tử trong mảng `requests` của `requests.json`.
 | `driver_id` | `str` | — | Mã tài xế được gán |
 | `eta` | `float` | — | Thời gian dự kiến đón (phút, số thực hữu hạn ≥ 0) |
 | `status` | `str` | `ASSIGNED` | Trạng thái — nhận `ASSIGNED`, `COMPLETED` hoặc `CANCELLED` |
+| `pickup_path` | `list[str]` | `[]` | Danh sách đỉnh lộ trình từ xe đến điểm đón (tùy chọn) |
 
 ### Sơ đồ chuyển trạng thái
 
@@ -234,6 +235,10 @@ ASSIGNED
 ### Schema `to_dict()`
 
 ```python
+# Khi có lộ trình đón:
+{"id": "T1", "request_id": "R1", "driver_id": "D1", "eta": 7.0, "status": "assigned", "pickup_path": ["N3", "N4"]}
+
+# Khi không có hoặc danh sách rỗng (tương thích dữ liệu cũ):
 {"id": "T1", "request_id": "R1", "driver_id": "D1", "eta": 7.0, "status": "assigned"}
 ```
 
@@ -248,6 +253,8 @@ Khớp phần tử trong mảng `trips` của `trips.json`.
 | `driver_id` | Không rỗng | `ValueError` |
 | `eta` | Phải là số thực hữu hạn ≥ 0 (`math.isfinite(eta)`, không nhận `bool`, `inf`, `nan`) | `ValueError` |
 | `status` khi khởi tạo | Phải là `ASSIGNED`, `COMPLETED` hoặc `CANCELLED` | `ValueError` |
+| `pickup_path` | Phải là list các chuỗi không rỗng hoặc `None` | `ValueError` |
+
 
 ---
 
