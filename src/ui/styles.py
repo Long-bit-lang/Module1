@@ -645,5 +645,27 @@ div[data-testid="stButton"] button {
     font-weight: 600;
     transition: all 150ms ease;
 }
+
+/* ── 9. Bộ lọc dữ liệu & Phân trang (Hạng mục D) ───────────────────────────── */
+.table-filter-bar {
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+.filter-counter-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #475569;
+    background: #F1F5F9;
+    padding: 0.2rem 0.6rem;
+    border-radius: 6px;
+    margin-bottom: 0.4rem;
+}
 </style>
 """
+

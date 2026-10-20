@@ -17,4 +17,6 @@ Chưa sửa trực tiếp vào CONTRACT vì thay đổi liên module phải đư
 | 10 | Hàng đợi `RequestQueue` chỉ hỗ trợ `enqueue`, `dequeue`, `requeue_head`, thiếu xóa phần tử ở vị trí bất kỳ. | Bổ sung `RequestQueue.remove(request_id: str) -> bool`, cập nhật chuẩn xác con trỏ `_head`, `_tail` và `_size`. | Thông | Đã triển khai |
 | 11 | `Stack` và `RequestQueue` thiếu phương thức duyệt và xem trước đỉnh mà không làm thay đổi cấu trúc dữ liệu. | Bổ sung `Stack.peek()`, `Stack.__iter__()`, `RequestQueue.peek()`, `RequestQueue.__iter__()`. | Thông, Duy | Đã triển khai |
 | 12 | CONTRACT §3 ghi `reversed()` trả về "một RoadGraph mới", nhưng code có cơ chế cache `_reversed_cache`. | Làm rõ trong tài liệu: `reversed()` trả về đồ thị đảo được cache để tái sử dụng, tự vô hiệu hóa (invalidation) khi có thay đổi cấu trúc (`add_node`/`add_edge`). | Duy | Đã thống nhất |
+| 13 | Thực thể `Trip` và `RideRequest` hiện chưa có trường thời gian tạo (`created_at`), khiến UI không thể hỗ trợ lọc lịch sử chuyến theo mốc thời gian thực. | Đề xuất bổ sung trường `created_at: float | str` (mặc định `time.time()` hoặc ISO-8601 string) vào `Trip` và `RideRequest`, hỗ trợ tương thích ngược trong `to_dict()`/`from_dict()` (nếu file JSON cũ thiếu thì gán giá trị mặc định). | Thông, Duy, TV5 | Đang đề xuất (chưa sửa model) |
+
 

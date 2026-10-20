@@ -120,6 +120,46 @@ def _confirm_reset_seed_dialog() -> None:
 
 
 
+def _on_reset_drivers_filter() -> None:
+    st.session_state["flt_drivers_status"] = []
+    st.session_state["flt_drivers_search"] = ""
+    st.session_state["flt_drivers_node"] = []
+
+
+def _on_reset_edges_filter() -> None:
+    st.session_state["flt_edges_search"] = ""
+
+
+def _filter_drivers(drivers: dict, nodes: list) -> dict:
+    statuses = st.session_state.get("flt_drivers_status", [])
+    search = st.session_state.get("flt_drivers_search", "").strip().lower()
+    nodes_sel = st.session_state.get("flt_drivers_node", [])
+
+    filtered = {}
+    for did, d in drivers.items():
+        if statuses and d.status not in statuses:
+            continue
+        if search and (search not in d.id.lower() and search not in d.name.lower()):
+            continue
+        if nodes_sel and d.node not in nodes_sel:
+            continue
+        filtered[did] = d
+    return filtered
+
+
+def _filter_edges(edges: list[tuple[str, str, float]]) -> list[tuple[str, str, float]]:
+    search = st.session_state.get("flt_edges_search", "").strip().lower()
+    if not search:
+        return edges
+    filtered = []
+    for u, v, w in edges:
+        u_label = S.node_label(u).lower()
+        v_label = S.node_label(v).lower()
+        if search in u_label or search in v_label or search in u.lower() or search in v.lower():
+            filtered.append((u, v, w))
+    return filtered
+
+
 def render() -> None:
     d = S.dispatcher()
     drivers = d.drivers_snapshot()
@@ -146,21 +186,91 @@ def render() -> None:
     dot_map = build_dot(edges, drivers, d.queue_snapshot(), S.node_label, nodes)
     render_graph_with_zoom(dot_map, key_prefix="map_data", height=500)
 
-    with st.expander(f"📋 Danh sách Tuyến đường ({len(edges)} cung kết nối)", expanded=False):
-        df_edges = pd.DataFrame(
-            [
-                {"Điểm đi": S.node_label(u), "Điểm đến": S.node_label(v), "Thời gian (phút)": f"{w:g}"}
-                for u, v, w in edges
-            ]
-        )
-        st.dataframe(df_edges, hide_index=True, width="stretch", height=280)
+    with st.expander(f"📋 Danh sách Tuyến đường ({len(edges)} cung kết nối)", expanded=True):
+        with st.expander("🔍 Bộ lọc", expanded=True):
+            c_f1, c_f2 = st.columns([4, 1], vertical_alignment="bottom")
+            with c_f1:
+                st.text_input(
+                    "Tìm kiếm theo địa danh",
+                    key="flt_edges_search",
+                    placeholder="Nhập tên điểm đi hoặc điểm đến...",
+                )
+            with c_f2:
+                st.button(
+                    "Xóa bộ lọc",
+                    key="flt_edges_reset",
+                    on_click=_on_reset_edges_filter,
+                    width="stretch",
+                )
 
+        filtered_edges = _filter_edges(edges)
+        st.caption(f"Hiển thị {len(filtered_edges)}/{len(edges)} bản ghi")
+
+        if not filtered_edges:
+            render_empty_state(
+                "🔍",
+                "Không tìm thấy tuyến đường",
+                "Không có tuyến đường nào khớp với từ khóa tìm kiếm.",
+                "Thử tìm với tên địa danh khác hoặc nhấn 'Xóa bộ lọc'.",
+            )
+        else:
+            df_edges = pd.DataFrame(
+                [
+                    {"Điểm đi": S.node_label(u), "Điểm đến": S.node_label(v), "Thời gian (phút)": f"{w:g}"}
+                    for u, v, w in filtered_edges
+                ]
+            )
+            st.dataframe(df_edges, hide_index=True, width="stretch", height=280)
 
     st.divider()
 
     # 3. Quản lý Tài xế
     st.subheader("Quản lý Đội ngũ Tài xế")
-    st.dataframe(_drivers_table(drivers), hide_index=True, width="stretch")
+
+    with st.expander("🔍 Bộ lọc", expanded=True):
+        c1, c2, c3, c4 = st.columns([1.5, 2, 2, 1], vertical_alignment="bottom")
+        with c1:
+            st.multiselect(
+                "Trạng thái",
+                options=[FREE, BUSY],
+                format_func=status_label,
+                key="flt_drivers_status",
+            )
+        with c2:
+            st.text_input(
+                "Tìm theo tên/ID",
+                key="flt_drivers_search",
+                placeholder="VD: D1, An...",
+            )
+        with c3:
+            st.multiselect(
+                "Vị trí",
+                options=nodes,
+                format_func=S.node_label,
+                key="flt_drivers_node",
+            )
+        with c4:
+            st.button(
+                "Xóa bộ lọc",
+                key="flt_drivers_reset",
+                on_click=_on_reset_drivers_filter,
+                width="stretch",
+            )
+
+    filtered_drivers = _filter_drivers(drivers, nodes)
+    st.caption(f"Hiển thị {len(filtered_drivers)}/{len(drivers)} bản ghi")
+
+    if not drivers:
+        render_empty_state("🚗", "Chưa có tài xế", "Hệ thống chưa có dữ liệu tài xế nào.")
+    elif not filtered_drivers:
+        render_empty_state(
+            "🔍",
+            "Không tìm thấy tài xế",
+            "Không có tài xế nào khớp với các tiêu chí bộ lọc đã chọn.",
+            "Thử điều chỉnh điều kiện lọc hoặc nhấn 'Xóa bộ lọc' để xem lại toàn bộ.",
+        )
+    else:
+        st.dataframe(_drivers_table(filtered_drivers), hide_index=True, width="stretch")
 
     st.caption("💡 *Để thêm tài xế mới, sửa thông tin hoặc xóa tài xế, sử dụng mục **(2) Quản lý Tài xế** trên Bảng thao tác bên phải.*")
 

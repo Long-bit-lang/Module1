@@ -391,6 +391,80 @@ def test_success_notification_persists_after_one_rerun(app):
     assert any(n["kind"] == "success" and "Đã tạo yêu cầu" in n["message"] and n["active"] for n in notifs_after)
 
 
+def test_table_filtering_reduces_rows_and_reset_restores(app):
+    """Ràng buộc 5: Bộ lọc làm giảm số dòng hiển thị và nút xóa lọc khôi phục lại dữ liệu ban đầu."""
+    # 1. Kiểm tra bộ lọc trên bảng Tài xế (Quản lý dữ liệu)
+    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
+    drivers_df = app.dataframe[1].value
+    initial_driver_count = len(drivers_df)
+    assert initial_driver_count == 3
+
+    # Lọc tài xế theo tên/ID "D1" -> bảng giảm còn 1 dòng
+    app.text_input(key="flt_drivers_search").input("D1").run()
+    assert not app.exception
+    assert len(app.dataframe[1].value) == 1
+    assert app.dataframe[1].value.iloc[0]["ID"] == "D1"
+
+    # Nhấn "Xóa bộ lọc" -> khôi phục lại 3 tài xế
+    app.button(key="flt_drivers_reset").click().run()
+    assert not app.exception
+    assert len(app.dataframe[1].value) == initial_driver_count
+    assert app.session_state["flt_drivers_search"] == ""
+
+    # 2. Kiểm tra bộ lọc trên bảng Tuyến đường (Quản lý dữ liệu)
+    edges_df = app.dataframe[0].value
+    initial_edge_count = len(edges_df)
+    assert initial_edge_count == 21
+
+    app.text_input(key="flt_edges_search").input("Cầu Rồng").run()
+    assert not app.exception
+    assert len(app.dataframe[0].value) < initial_edge_count
+    assert len(app.dataframe[0].value) == 6
+
+    app.button(key="flt_edges_reset").click().run()
+    assert not app.exception
+    assert len(app.dataframe[0].value) == initial_edge_count
+
+    # 3. Kiểm tra bộ lọc Hàng đợi yêu cầu (Điều phối chuyến)
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+
+    # Tạo 2 yêu cầu đặt xe
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+
+    _pick(app, "req_pickup", "N4")
+    _pick(app, "req_dropoff", "N6")
+    app.button(key="btn_submit").click().run()
+
+    assert len(app.dataframe[0].value) == 2
+
+    # Lọc theo địa danh "Cầu Rồng" (N3)
+    app.text_input(key="flt_queue_search").input("Cầu Rồng").run()
+    assert not app.exception
+    assert len(app.dataframe[0].value) == 1
+
+    # Xóa bộ lọc hàng đợi
+    app.button(key="flt_queue_reset").click().run()
+    assert not app.exception
+    assert len(app.dataframe[0].value) == 2
+
+    # 4. Kiểm tra bộ lọc Lịch sử chuyến xe (Điều phối chuyến)
+    # Ghép 2 chuyến
+    app.button(key="btn_dispatch").click().run()
+    app.button(key="btn_dispatch").click().run()
+    assert len(_d(app).trips_snapshot()) == 2
+
+    # Lọc chuyến theo mã tìm kiếm
+    app.text_input(key="flt_trips_search").input("T1").run()
+    assert not app.exception
+    # Kiểm tra nút xóa lọc chuyến
+    app.button(key="flt_trips_reset").click().run()
+    assert not app.exception
+    assert app.session_state["flt_trips_search"] == ""
+
+
+
 
 
 
