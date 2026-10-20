@@ -373,6 +373,14 @@ def test_panel_toggle_changes_panel_open(app):
     app.button(key="btn_toggle_panel").click().run()
     assert app.session_state["panel_open"] is True
 
+def test_sidebar_panel_toggle_changes_panel_open(app):
+    """Nút toggle trong sidebar st.sidebar cũng thay đổi trạng thái session_state['panel_open']."""
+    assert app.session_state.get("panel_open", True) is True
+    app.button(key="btn_sidebar_panel_toggle").click().run()
+    assert app.session_state["panel_open"] is False
+
+    app.button(key="btn_sidebar_panel_toggle").click().run()
+    assert app.session_state["panel_open"] is True
 
 def test_success_notification_persists_after_one_rerun(app):
     """Ràng buộc 5: Thông báo success còn tồn tại sau một rerun trong trung tâm thông báo."""

@@ -234,13 +234,13 @@ def render_action_panel() -> None:
     free_count = sum(1 for x in drivers.values() if x.status == FREE)
     active_trips = [t for t in trips if t.status == ASSIGNED]
 
-    # Nút nổi bật tắt panel luôn ở DOM
-    toggle_label = "👉 Đóng panel" if is_open else "👈 Mở panel thao tác"
+    # Nút nổi bật tắt panel luôn ở DOM với nhãn trực quan
+    toggle_label = "✕ Thu gọn bảng" if is_open else "⚡ Bảng thao tác ◀"
     st.button(
         toggle_label,
         key="btn_toggle_panel",
         on_click=_toggle_panel,
-        help="Ẩn/hiện panel thao tác nhanh bên phải",
+        help="Ẩn hoặc hiện bảng thao tác nhanh bên phải",
     )
 
     with st.container(key="action_panel"):

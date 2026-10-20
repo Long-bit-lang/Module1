@@ -433,21 +433,7 @@ div[class*="st-key-"][class*="_canvas"] .stGraphVizChart > svg {
 /* Nút bật/tắt panel nổi ở góc trên bên phải */
 .st-key-btn_toggle_panel {
     position: fixed !important;
-    right: 1.25rem !important;
-    top: 0.65rem !important;
-    z-index: 999 !important;
-}
-.st-key-btn_toggle_panel button {
-    background: #2563EB !important;
-    color: #FFFFFF !important;
-    border: 1px solid #1D4ED8 !important;
-    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25) !important;
-    font-size: 0.82rem !important;
-    padding: 0.35rem 0.8rem !important;
-}
-.st-key-btn_toggle_panel button:hover {
-    background: #1D4ED8 !important;
-    color: #FFFFFF !important;
+    z-index: 99999 !important;
 }
 
 .panel-header {
@@ -457,6 +443,7 @@ div[class*="st-key-"][class*="_canvas"] .stGraphVizChart > svg {
     padding-bottom: 0.5rem;
     margin-bottom: 0.75rem;
     border-bottom: 1.5px solid #E2E8F0;
+    padding-right: 130px;
 }
 .panel-header-title {
     font-size: 0.88rem;
