@@ -7,7 +7,7 @@ import pytest
 
 from core.json_storage import JsonStorage, StorageError
 from core.road_graph import RoadGraph
-from models import ASSIGNED, COMPLETED, QUEUED
+from models import ASSIGNED, CANCELLED, COMPLETED, QUEUED
 from models.driver import BUSY, FREE, Driver
 from models.location import Location
 from models.ride_request import RideRequest
@@ -408,3 +408,83 @@ def test_save_all_interrupted_write_cleans_up_tmp_and_preserves_targets(
     # Nội dung 4 file chính thức vẫn nguyên vẹn 100%
     content_after = {f: (runtime_dir / f).read_text(encoding="utf-8") for f in JsonStorage.REQUIRED_FILES}
     assert content_before == content_after
+
+
+def test_save_all_and_load_all_preserves_cancelled_status(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """save_all rồi load_all bảo toàn trạng thái CANCELLED cho cả Trip và RideRequest."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    state = storage.load_all()
+
+    # Tạo trip và request trạng thái CANCELLED
+    cancelled_req = RideRequest("R_CANCELLED", "N1", "N2", status=CANCELLED)
+    cancelled_trip = Trip("T_CANCELLED", "R_CANCELLED", "D1", 5.0, status=CANCELLED)
+
+    state["requests"].append(cancelled_req)
+    state["trips"].append(cancelled_trip)
+
+    storage.save_all(state)
+
+    reloaded_state = storage.load_all()
+    req_map = {r.id: r for r in reloaded_state["requests"]}
+    trip_map = {t.id: t for t in reloaded_state["trips"]}
+
+    assert req_map["R_CANCELLED"].status == CANCELLED
+    assert trip_map["T_CANCELLED"].status == CANCELLED
+
+
+def test_load_all_cancelled_request_with_assigned_trip_raises_storage_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi file có request CANCELLED nhưng trip vẫn ASSIGNED."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    storage.load_all()
+
+    # R1 chuyển sang CANCELLED nhưng trip T1 vẫn ASSIGNED
+    bad_requests = {
+        "requests": [
+            {"id": "R1", "pickup_node": "N1", "dropoff_node": "N2", "status": CANCELLED},
+            {"id": "R2", "pickup_node": "N2", "dropoff_node": "N3", "status": QUEUED},
+        ]
+    }
+    _write_json(runtime_dir / "requests.json", bad_requests)
+
+    with pytest.raises(StorageError, match="trạng thái không hợp lệ|đang thực hiện"):
+        storage.load_all()
+
+
+def test_load_all_cancelled_request_with_completed_trip_raises_storage_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi file có request CANCELLED nhưng trip lại COMPLETED."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    storage.load_all()
+
+    # R1 CANCELLED, T1 COMPLETED, D2 FREE (để driver không lỗi busy)
+    bad_requests = {
+        "requests": [
+            {"id": "R1", "pickup_node": "N1", "dropoff_node": "N2", "status": CANCELLED},
+            {"id": "R2", "pickup_node": "N2", "dropoff_node": "N3", "status": QUEUED},
+        ]
+    }
+    bad_trips = {
+        "trips": [
+            {"id": "T1", "request_id": "R1", "driver_id": "D2", "eta": 4.0, "status": COMPLETED},
+        ]
+    }
+    bad_drivers = {
+        "drivers": [
+            {"id": "D1", "name": "Nguyễn Văn An", "node": "N1", "status": FREE},
+            {"id": "D2", "name": "Trần Văn Bình", "node": "N2", "status": FREE},
+        ]
+    }
+    _write_json(runtime_dir / "requests.json", bad_requests)
+    _write_json(runtime_dir / "trips.json", bad_trips)
+    _write_json(runtime_dir / "drivers.json", bad_drivers)
+
+    with pytest.raises(StorageError, match="trạng thái không hợp lệ|đã hoàn thành"):
+        storage.load_all()

@@ -9,7 +9,18 @@ from pathlib import Path
 from typing import Any
 
 from core.road_graph import RoadGraph
-from models import ASSIGNED, BUSY, FREE, QUEUED, Driver, Location, RideRequest, Trip
+from models import (
+    ASSIGNED,
+    BUSY,
+    CANCELLED,
+    COMPLETED,
+    FREE,
+    QUEUED,
+    Driver,
+    Location,
+    RideRequest,
+    Trip,
+)
 
 _ROOT = Path(__file__).resolve().parents[2]
 
@@ -271,6 +282,9 @@ class JsonStorage:
                 )
 
         all_trip_request_ids = {t.request_id for t in trips}
+        assigned_or_completed_trip_req_ids = {
+            t.request_id for t in trips if t.status in (ASSIGNED, COMPLETED)
+        }
         for req in requests:
             if req.status == ASSIGNED and req.id not in all_trip_request_ids:
                 raise StorageError(
@@ -278,7 +292,11 @@ class JsonStorage:
                 )
             if req.status == QUEUED and req.id in active_request_ids:
                 raise StorageError(
-                    f"Yêu cầu '{req.id}' có trạng thái '{req.status}' nhưng đang được gán cho một chuyến đi chưa hoàn thành."
+                    f"Yêu cầu '{req.id}' có trạng thái '{req.status}' nhưng đang được gán cho một chuyến đi chưa hoàn thành ({ASSIGNED})."
+                )
+            if req.status == CANCELLED and req.id in assigned_or_completed_trip_req_ids:
+                raise StorageError(
+                    f"Yêu cầu '{req.id}' có trạng thái '{req.status}' nhưng lại được gắn với chuyến đi đang thực hiện ({ASSIGNED}) hoặc đã hoàn thành ({COMPLETED})."
                 )
 
         return {
