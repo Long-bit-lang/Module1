@@ -488,3 +488,125 @@ def test_load_all_cancelled_request_with_completed_trip_raises_storage_error(
 
     with pytest.raises(StorageError, match="trạng thái không hợp lệ|đã hoàn thành"):
         storage.load_all()
+
+
+# =====================================================================
+# 8. KIỂM THỬ LỘ TRÌNH ĐÓN (PICKUP_PATH) TRONG LƯU TRỮ VÀ NẠP DỮ LIỆU
+# =====================================================================
+
+
+def test_storage_save_all_load_all_preserves_pickup_path(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """save_all và load_all giữ nguyên pickup_path của Trip."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    state = storage.load_all()
+
+    # Thêm pickup_path hợp lệ cho T1: D2 ở N2, R1 đón ở N1, nhưng đồ thị có cạnh N1 -> N2.
+    # Đồ thị seed có N1 -> N2, N2 -> N3. Cho cạnh N2 -> N1 để lộ trình đón N2 -> N1 hợp lệ.
+    state["graph"].add_edge("N2", "N1", 3.0)
+    state["trips"][0].pickup_path = ["N2", "N1"]
+
+    storage.save_all(state)
+
+    # Đọc raw trips.json để kiểm tra key "pickup_path" được ghi
+    with open(runtime_dir / "trips.json", "r", encoding="utf-8") as f:
+        trips_raw = json.load(f)
+    assert trips_raw["trips"][0]["pickup_path"] == ["N2", "N1"]
+
+    # Nạp lại kiểm tra trip có pickup_path đầy đủ
+    reloaded_state = storage.load_all()
+    assert reloaded_state["trips"][0].pickup_path == ["N2", "N1"]
+
+
+def test_storage_load_all_without_pickup_path_backward_compatible(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """File cũ không có khóa pickup_path vẫn nạp thành công và pickup_path mặc định là rỗng."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    state = storage.load_all()
+
+    # trips.json ban đầu trong valid_seed_data không có pickup_path
+    assert state["trips"][0].pickup_path == []
+
+
+def test_storage_load_all_pickup_path_nonexistent_node_raises_storage_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi pickup_path chứa đỉnh không tồn tại trên đồ thị."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    storage.load_all()
+
+    bad_trips = {
+        "trips": [
+            {
+                "id": "T1",
+                "request_id": "R1",
+                "driver_id": "D2",
+                "eta": 4.0,
+                "status": ASSIGNED,
+                "pickup_path": ["N999", "N1"],
+            }
+        ]
+    }
+    _write_json(runtime_dir / "trips.json", bad_trips)
+
+    with pytest.raises(StorageError, match="không tồn tại trên đồ thị"):
+        storage.load_all()
+
+
+def test_storage_load_all_pickup_path_wrong_endpoint_raises_storage_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi đỉnh cuối trong pickup_path không khớp với pickup_node của request."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    storage.load_all()
+
+    # R1 có pickup_node là N1, nhưng pickup_path lại kết thúc ở N2
+    bad_trips = {
+        "trips": [
+            {
+                "id": "T1",
+                "request_id": "R1",
+                "driver_id": "D2",
+                "eta": 4.0,
+                "status": ASSIGNED,
+                "pickup_path": ["N1", "N2"],
+            }
+        ]
+    }
+    _write_json(runtime_dir / "trips.json", bad_trips)
+
+    with pytest.raises(StorageError, match="không khớp với điểm đón"):
+        storage.load_all()
+
+
+def test_storage_load_all_pickup_path_invalid_edge_raises_storage_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi các cặp đỉnh liên tiếp trong pickup_path không phải là cạnh có thật."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    storage.load_all()
+
+    # Đồ thị chỉ có N1 -> N2 và N2 -> N3. Không có N3 -> N1.
+    bad_trips = {
+        "trips": [
+            {
+                "id": "T1",
+                "request_id": "R1",
+                "driver_id": "D2",
+                "eta": 4.0,
+                "status": ASSIGNED,
+                "pickup_path": ["N3", "N1"],
+            }
+        ]
+    }
+    _write_json(runtime_dir / "trips.json", bad_trips)
+
+    with pytest.raises(StorageError, match="không phải là cạnh có thật"):
+        storage.load_all()

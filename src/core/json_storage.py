@@ -232,6 +232,7 @@ class JsonStorage:
         # 5. Nạp danh sách chuyến đi (Trips) và kiểm tra tham chiếu request_id, driver_id
         trips: list[Trip] = []
         trip_ids: set[str] = set()
+        request_by_id = {req.id: req for req in requests}
         for item in trips_raw["trips"]:
             if not isinstance(item, dict):
                 raise StorageError("Mỗi phần tử trong 'trips' của trips.json phải là một dict.")
@@ -250,6 +251,24 @@ class JsonStorage:
                 raise StorageError(
                     f"Chuyến đi '{trip.id}' tham chiếu đến driver_id '{trip.driver_id}' không tồn tại."
                 )
+
+            if trip.pickup_path:
+                req = request_by_id[trip.request_id]
+                for node in trip.pickup_path:
+                    if not graph.has_node(node):
+                        raise StorageError(
+                            f"Lộ trình đón (pickup_path) của chuyến '{trip.id}' chứa đỉnh '{node}' không tồn tại trên đồ thị."
+                        )
+                if trip.pickup_path[-1] != req.pickup_node:
+                    raise StorageError(
+                        f"Đỉnh cuối trong lộ trình đón của chuyến '{trip.id}' ({trip.pickup_path[-1]}) không khớp với điểm đón của yêu cầu '{req.id}' ({req.pickup_node})."
+                    )
+                for u, v in zip(trip.pickup_path, trip.pickup_path[1:]):
+                    neighbors = [nbr for nbr, _ in graph.neighbors(u)]
+                    if v not in neighbors:
+                        raise StorageError(
+                            f"Lộ trình đón của chuyến '{trip.id}' chứa đoạn nối ({u} -> {v}) không phải là cạnh có thật trên đồ thị."
+                        )
 
             trip_ids.add(trip.id)
             trips.append(trip)
