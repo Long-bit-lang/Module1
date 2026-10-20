@@ -1,11 +1,11 @@
 # 🚕 Hệ thống Quản lý và Điều phối Đặt xe Thông minh trên Đồ thị Giao thông
 
-> **Dự án Module 1** — Mô phỏng và giải quyết bài toán điều phối đặt xe tự động, tối ưu hóa thời gian đón khách (ETA) trên mạng lưới giao thông có hướng sử dụng giải thuật tìm đường ngắn nhất, hàng đợi FIFO, cơ chế hoàn tác Undo/Redo và lưu trữ JSON nguyên tử (Atomic).
+> **Dự án Module 1** — Mô phỏng và giải quyết bài toán điều phối đặt xe tự động, tối ưu hóa thời gian đón khách (ETA) trên mạng lưới giao thông có hướng sử dụng giải thuật tìm đường ngắn nhất, hàng đợi FIFO, quản lý vòng đời chuyến đi (Hoàn thành / Hủy chuyến) và lưu trữ JSON nguyên tử (Atomic).
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Framework](https://img.shields.io/badge/Streamlit-1.66%2B-FF4B4B.svg)](https://streamlit.io/)
 [![Package Manager](https://img.shields.io/badge/uv-Astral-purple.svg)](https://docs.astral.sh/uv/)
-[![Tests](https://img.shields.io/badge/pytest-148%20passed-brightgreen.svg)](https://pytest.org/)
+[![Tests](https://img.shields.io/badge/pytest-162%20passed-brightgreen.svg)](https://pytest.org/)
 
 ---
 
@@ -43,8 +43,7 @@ Module1/
 │   │   ├── road_graph.py  # [TV2] Đồ thị giao thông có hướng trọng số
 │   │   ├── strategies.py  # [TV2] Chiến lược ghép cuốc A1 & A2 (Dijkstra)
 │   │   ├── structures.py  # [TV3] Cấu trúc dữ liệu: RequestQueue (FIFO) & Stack
-│   │   ├── undo_manager.py# [TV3] Quản lý lịch sử Undo / Redo
-│   │   ├── dispatcher.py  # [TV3] Bộ điều phối nghiệp vụ tập trung
+│   │   ├── dispatcher.py  # [TV3] Bộ điều phối nghiệp vụ tập trung & Hủy chuyến
 │   │   └── json_storage.py# [TV4] Lưu trữ đọc/ghi JSON nguyên tử (Atomic)
 │   ├── ui/                # [TV5] Giao diện người dùng Streamlit nâng cao
 │   │   ├── session.py     # Quản lý Session State & Trung tâm thông báo
@@ -69,10 +68,10 @@ Module1/
 ### Bảng phân công thành viên
 | Thành viên | Phụ trách | Phạm vi triển khai |
 |---|---|---|
-| **Nhi** | Data Models | `BaseEntity`, `Location`, `Driver`, `RideRequest`, `Trip`, enum trạng thái. |
+| **Nhi** | Data Models | `BaseEntity`, `Location`, `Driver`, `RideRequest`, `Trip`, enum trạng thái (thêm `CANCELLED`). |
 | **Duy** | Graph & Algorithms | `RoadGraph`, Giải thuật Dijkstra Forward (A1) & Reverse (A2), ma trận trọng số. |
-| **Thông** | Dispatcher & History | Hàng đợi yêu cầu `RequestQueue`, ngăn xếp `UndoManager`, bộ điều phối `Dispatcher`. |
-| **Thắng** | Storage Engine | `JsonStorage`, Atomic Write qua file tạm `.tmp`, thẩm định schema dữ liệu. |
+| **Thông** | Dispatcher & Core | Hàng đợi yêu cầu `RequestQueue`, ngăn xếp `Stack`, bộ điều phối `Dispatcher`, cơ chế hủy chuyến `cancel_trip`. |
+| **Thắng** | Storage Engine | `JsonStorage`, Atomic Write qua file tạm `.tmp`, thẩm định tính nhất quán dữ liệu. |
 | **Long** (Lead) | UI & Integration | Streamlit UI Dashboard, tích hợp hệ thống, `CONTRACT.md`, CI/CD và tài liệu. |
 
 ---
@@ -81,10 +80,10 @@ Module1/
 
 ### 🧭 Điều hướng dọc & Bảng thao tác ẩn/hiện (Hạng mục A)
 - **Menu dọc bên trái**: Điều hướng 3 trang ("Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán") bằng `st.sidebar.radio` với giao diện bo góc, icon và hiệu ứng active màu `#EFF6FF`, duy trì nguyên vẹn trạng thái phiên làm việc không bị reset khi tương tác.
-- **Bảng thao tác trượt (Sliding Action Panel)**: Cố định bên phải (width: 360px), hỗ trợ nút nổi bật/tắt (toggle) chuyển trạng thái mượt mà (transition ≤200ms). Toàn bộ widget thao tác (đặt xe, sửa/xóa tài xế, ghép chuyến, undo/redo, hoàn thành chuyến) tập trung tại panel giúp giao diện chính tối ưu hoàn toàn cho hiển thị KPI, bản đồ và dữ liệu ở độ phân giải 1366x768.
+- **Bảng thao tác trượt (Sliding Action Panel)**: Cố định bên phải (width: 360px), hỗ trợ nút nổi bật/tắt (toggle) chuyển trạng thái mượt mà (transition ≤200ms). Toàn bộ widget thao tác (đặt xe, sửa/xóa tài xế, ghép chuyến, hủy chuyến, hoàn thành chuyến) tập trung tại panel giúp giao diện chính tối ưu hoàn toàn cho hiển thị KPI, bản đồ và dữ liệu ở độ phân giải 1366x768.
 
 ### 🏷️ Header trang riêng biệt & Chip thông số động (Page Header & Chips)
-- Mỗi trang nghiệp vụ sở hữu header riêng biệt gồm: icon trang, tiêu đề lớn (`h1`), mô tả phụ ngữ cảnh và hàng chip thông số động cập nhật theo thời gian thực (số đỉnh, số cung, xe rảnh, xe bận, hàng đợi, chuyến đang chạy, chiến lược đang chọn).
+- Mỗi trang nghiệp vụ sở hữu header riêng biệt gồm: icon trang, tiêu đề lớn (`h1`), mô tả phụ ngữ cảnh và hàng chip thông số động cập nhật theo thời gian thực (số đỉnh, số cung, xe rảnh, xe bận, hàng đợi, chuyến đang chạy, chuyến đã hủy, chiến lược đang chọn).
 - Thiết kế bo góc 10px với viền trái màu xanh thương hiệu `#2563EB`, tự động ngắt dòng linh hoạt với `flex-wrap` trên màn hình 1366x768 và bảo đảm an toàn chống XSS với `html.escape`.
 - Tên ứng dụng "🚕 Hệ thống Điều phối Đặt xe Thông minh" được đưa lên đầu thanh Sidebar tạo điểm nhấn thương hiệu tinh tế.
 
@@ -95,12 +94,12 @@ Module1/
 
 ### 🚕 Thẻ Kết quả Điều phối Nổi bật (Hạng mục C)
 - Đặt ngay trên bản đồ điều phối với nền xanh nhạt `#EFF6FF` và viền trái 6px, hiển thị tiêu đề lớn, 4 chỉ số KPI quan trọng (Tài xế, ETA, Đỉnh duyệt, Thời gian tính toán) và breadcrumb lộ trình.
-- Thẻ tồn tại xuyên suốt qua các thao tác Undo/Redo/Hoàn thành với nhãn trạng thái trực quan ("Đang chạy", "Đã hoàn tác", "Chuyến đã hoàn thành").
+- Thẻ tồn tại xuyên suốt qua các thao tác Hoàn thành/Hủy chuyến với nhãn trạng thái trực quan ("Đang chạy", "Chuyến đã hủy", "Chuyến đã hoàn thành").
 - Thẻ cảnh báo thân thiện khi không thể ghép chuyến (giải thích nguyên nhân dễ hiểu và gợi ý hành động xử lý).
 
 ### 🔍 Bộ lọc dữ liệu & Phân trang đa năng (Hạng mục D)
 - Bộ lọc mở sẵn (`st.expander`) cho toàn bộ 4 bảng dữ liệu:
-  - **Lịch sử chuyến**: Lọc theo trạng thái, tài xế, mã chuyến/yêu cầu, điểm đón/trả, khoảng ETA (slider) và sắp xếp mới nhất/cũ nhất.
+  - **Lịch sử chuyến**: Lọc theo trạng thái (kể cả "Đã hủy"), tài xế, mã chuyến/yêu cầu, điểm đón/trả, khoảng ETA (slider) và sắp xếp mới nhất/cũ nhất.
   - **Tài xế**: Lọc trạng thái, tìm tên/mã tài xế, vị trí hiện tại.
   - **Hàng đợi FIFO & Tuyến đường**: Tìm kiếm theo tên địa danh.
 - Nút **"Xóa bộ lọc"** khôi phục nhanh, dòng đếm **"Hiển thị X/Y bản ghi"**, và trạng thái rỗng (empty state) thân thiện khi không có kết quả khớp.
@@ -111,15 +110,16 @@ Module1/
 - Tự động đánh dấu trạng thái tài xế trên từng nút giao thông (viền xanh lá: tài xế sẵn sàng; viền đỏ: tài xế đang bận; viền cam: điểm đón đang chờ).
 - Cụm điều khiển Thu nhỏ (-), Phóng to (+), Vừa khung (100%) và slider zoom mượt mà không phụ thuộc CDN.
 
-### ↩️ Lịch sử thao tác hoàn tác / làm lại (Undo / Redo)
-- Áp dụng cấu trúc dữ liệu **2 Ngăn xếp (Dual-Stack)**: `undo_stack` và `redo_stack`.
-- Thao tác Undo đưa chuyến xe vừa gán về lại đầu hàng đợi FIFO và khôi phục tài xế về trạng thái rảnh (`free`).
-- Redo cho phép khôi phục lại ngay lần điều phối vừa hoàn tác.
-- Tự động làm mới ngăn xếp khi có thao tác làm biến đổi trạng thái (như hoàn thành chuyến xe).
+### ⛔ Quản lý Vòng đời & Hủy chuyến an toàn (Cancel Trip)
+- Hỗ trợ hủy chuyến xe đã điều phối (`ASSIGNED`) thông qua hàm nguyên tử `cancel_trip(trip_id)`.
+- Tài xế được giải phóng ngay tại vị trí hiện tại (`FREE`) mà không thay đổi đỉnh đồ thị.
+- Yêu cầu chuyển sang trạng thái `CANCELLED` và **không quay lại hàng đợi FIFO** (theo quyết định D1 = A) nhằm phản ánh đúng ý định hủy và giữ vững tính minh bạch.
+- Giao diện tích hợp hộp thoại modal xác nhận (`st.dialog`) với thông báo cảnh báo rõ ràng; tự động ẩn các nút thao tác sau khi hủy và hiển thị huy hiệu `⛔ Đã hủy`.
 
 ### 💾 Lưu trữ dữ liệu an toàn (Atomic JSON Storage)
 - Quá trình ghi dữ liệu áp dụng cơ chế **atomic từng file, giảm rủi ro bất nhất quán giữa các file**: toàn bộ 4 file được chuẩn bị và flush/fsync vào file tạm `.tmp` trước khi hoán đổi nguyên tử (`os.replace`) sang file chính thức nhằm giảm thiểu tối đa rủi ro mất mát hoặc hỏng file JSON nếu chương trình bị ngắt đột ngột.
 - Tự động tách biệt thư mục gốc `data/seed/` và thư mục hoạt động `data/runtime/`.
+
 
 ---
 
@@ -176,10 +176,10 @@ Truy cập ứng dụng tại: **`http://localhost:8501`**
 ## 6. Hướng dẫn kiểm thử (Testing)
 
 Dự án xây dựng bộ kiểm thử tự động toàn diện bao gồm:
-- **Unit Tests**: Kiểm tra tính độc lập của Models, Graph, Hàng đợi FIFO, UndoManager, JsonStorage.
+- **Unit Tests**: Kiểm tra tính độc lập của Models, Graph, Hàng đợi FIFO, Stack, JsonStorage, Dispatcher.
 - **Contract Tests**: Đảm bảo tất cả thành phần tuân thủ chuẩn giao tiếp [CONTRACT.md](docs/CONTRACT.md).
-- **UI AppTest**: Giả lập tương tác người dùng trên giao diện Streamlit thực thụ (đặt xe, bấm điều phối, bấm undo/redo, hoàn thành chuyến).
-- **Integration Tests**: Kiểm thử luồng tích hợp đầu-cuối từ lưu trữ đĩa, nạp dữ liệu đến điều phối và hoàn tác.
+- **UI AppTest**: Giả lập tương tác người dùng trên giao diện Streamlit thực thụ (đặt xe, bấm điều phối, hủy chuyến với modal xác nhận, hoàn thành chuyến).
+- **Integration Tests**: Kiểm thử luồng tích hợp đầu-cuối từ lưu trữ đĩa, nạp dữ liệu đến điều phối, hủy chuyến và hoàn thành chuyến.
 
 Chạy toàn bộ test suite bằng câu lệnh:
 ```bash
@@ -188,14 +188,14 @@ uv run pytest -v
 
 Kết quả kiểm thử chuẩn:
 ```text
-============================= 144 passed in 8.93s ==============================
+============================= 162 passed in 11.52s =============================
 ```
 
 ---
 
 ## 7. Kịch bản chạy mẫu (Demo Walkthrough)
 
-Dữ liệu mẫu (`seed`) đã có sẵn 2 tài xế rảnh (`D1` tại `N3`, `D2` tại `N2`) và 2 yêu cầu đang chờ trong hàng đợi FIFO: **`R3`** (đón tại `N4`) và **`R4`** (đón tại `N5`). Để quan sát đầy đủ luồng nghiệp vụ và thuật toán, thực hiện các bước sau:
+Dữ liệu mẫu (`seed`) đã có sẵn 2 tài xế rảnh (`D1` tại `N3`, `D2` tại `N2`), tài xế `D3` đang chạy chuyến `T2`, và 2 yêu cầu đang chờ trong hàng đợi FIFO: **`R3`** (đón tại `N4`) và **`R4`** (đón tại `N5`). Để quan sát đầy đủ luồng nghiệp vụ và thuật toán, thực hiện các bước sau:
 
 1. **Khám phá mạng lưới & Trạng thái khởi tạo (Tab "Quản lý dữ liệu")**:
    - Quan sát bản đồ đồ thị và vị trí các tài xế rảnh `D1`, `D2`.
@@ -209,9 +209,11 @@ Dữ liệu mẫu (`seed`) đã có sẵn 2 tài xế rảnh (`D1` tại `N3`, `
    - *Điểm nhấn thuật toán*: Cả `D1` (tại `N3`) và `D2` (tại `N2`) đều cách `N4` khoảng cách bằng nhau (ETA = 6.0). Quy tắc tie-breaking (ưu tiên ID nhỏ hơn theo thứ tự từ điển) sẽ quyết định ghép chuyến thành công cho **`D1`**.
    - Thẻ kết quả hiển thị chi tiết: Tài xế `D1`, ETA = 6.0 phút, số đỉnh duyệt và chuỗi breadcrumb lộ trình.
 
-3. **Kiểm tra tính năng Hoàn tác (Undo / Redo)**:
-   - Nhấn **Undo**: Chuyến xe vừa ghép cho `R3` bị hủy, `D1` quay về trạng thái rảnh (`FREE`), `R3` quay lại vị trí số 1 trong hàng đợi FIFO.
-   - Nhấn **Redo**: Phục hồi lại chuyến xe của `R3` và chuyển `D1` sang bận (`BUSY`).
+3. **Kiểm tra tính năng Hủy chuyến (Cancel Trip)**:
+   - Tại mục **"Chuyến đang chạy"** trên Action panel (hoặc chuyến `T2` của tài xế `D3` trong dữ liệu seed), nhấn nút **Hủy chuyến**.
+   - Hộp thoại modal cảnh báo (`st.dialog`) xuất hiện giải thích rõ: tài xế được giải phóng tại vị trí hiện tại và yêu cầu bị hủy không thể khôi phục (quyết định D1 = A: không quay lại hàng đợi).
+   - Nhấn **Xác nhận hủy**: Chuyến xe chuyển trạng thái sang `CANCELLED`, tài xế được giải phóng về trạng thái rảnh (`FREE`), yêu cầu chuyển sang `CANCELLED`.
+   - Thẻ kết quả chuyển nhãn sang `⛔ Chuyến đã hủy`. Nút Hoàn thành và Hủy chuyến của chuyến đó tự động biến mất. Tài xế vừa được giải phóng có thể nhận cuốc mới ngay lập tức.
 
 4. **Tạo yêu cầu mới & Hủy yêu cầu**:
    - Trong form **"Tạo yêu cầu đặt xe mới"**, chọn điểm đón (`N3 - Cầu Rồng`) và điểm trả (`N6 - Chợ Hàn`) rồi nhấn **Gửi yêu cầu**.
@@ -222,6 +224,7 @@ Dữ liệu mẫu (`seed`) đã có sẵn 2 tài xế rảnh (`D1` tại `N3`, `
 5. **Hoàn thành chuyến & Đối chuẩn thuật toán**:
    - Tại danh sách chuyến xe đang chạy, nhấn **Hoàn thành**: Tài xế di chuyển tới điểm trả khách và tự động chuyển về trạng thái rảnh (`FREE`).
    - Chuyển sang Tab **"Đối chuẩn thuật toán"**: Nhấn **Chạy đối chuẩn** để so sánh trực quan thời gian chạy và số đỉnh duyệt giữa A1 và A2 qua biểu đồ cột; hoặc mở mục **Thử nghiệm mở rộng quy mô** để quan sát ưu thế vượt trội của A2 khi số tài xế tăng lên 100.
+
 
 ---
 
