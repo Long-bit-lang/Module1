@@ -465,6 +465,119 @@ div[class*="st-key-"][class*="_canvas"] .stGraphVizChart > svg {
     color: #1E3A8A;
 }
 
+/* ── 12. Trung tâm Thông báo & Banner nổi bật (Notification Center) ──────── */
+.st-key-notification_center {
+    margin-bottom: 0.85rem;
+}
+.notif-banner {
+    display: flex;
+    align-items: center;
+    border-radius: 8px;
+    padding: 0.85rem 1.15rem;
+    margin-bottom: 0.4rem;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+    border: 1px solid #E2E8F0;
+    transition: all 180ms ease;
+}
+.notif-banner-body {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    width: 100%;
+}
+.notif-banner-icon {
+    font-size: 1.4rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+.notif-banner-content {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    min-width: 0;
+}
+.notif-banner-text {
+    font-size: 1.05rem;
+    font-weight: 600;
+    line-height: 1.4;
+}
+.notif-banner-time {
+    font-size: 0.78rem;
+    opacity: 0.75;
+    font-weight: 500;
+}
+
+/* Các phân loại banner với viền trái 6px đặc trưng (B2) */
+.notif-banner-success {
+    background: #ECFDF5;
+    border-left: 6px solid #059669;
+    border-color: #A7F3D0 #A7F3D0 #A7F3D0 #059669;
+    color: #065F46;
+    animation: notifFadeOut 0.4s ease-out 8s forwards;
+}
+.notif-banner-error {
+    background: #FEF2F2;
+    border-left: 6px solid #DC2626;
+    border-color: #FECACA #FECACA #FECACA #DC2626;
+    color: #991B1B;
+}
+.notif-banner-warning {
+    background: #FFFBEB;
+    border-left: 6px solid #D97706;
+    border-color: #FDE68A #FDE68A #FDE68A #D97706;
+    color: #92400E;
+}
+.notif-banner-info {
+    background: #EFF6FF;
+    border-left: 6px solid #2563EB;
+    border-color: #BFDBFE #BFDBFE #BFDBFE #2563EB;
+    color: #1E40AF;
+    animation: notifFadeOut 0.4s ease-out 8s forwards;
+}
+
+/* Tự động ẩn sau ~8s mượt mà (B2) */
+@keyframes notifFadeOut {
+    0% { opacity: 1; max-height: 200px; }
+    100% { opacity: 0; max-height: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; display: none; overflow: hidden; }
+}
+
+/* Nút đóng thông báo nhỏ gọn */
+div[class*="st-key-btn_close_notif_"] button {
+    background: transparent !important;
+    border: none !important;
+    color: #64748B !important;
+    font-size: 1.1rem !important;
+    padding: 0.2rem 0.5rem !important;
+    box-shadow: none !important;
+}
+div[class*="st-key-btn_close_notif_"] button:hover {
+    color: #0F172A !important;
+    background: #E2E8F0 !important;
+}
+
+/* Nhật ký thao tác (B3) */
+.notif-log-item {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.35rem 0.6rem;
+    border-bottom: 1px dashed #E2E8F0;
+    font-size: 0.85rem;
+    color: #334155;
+}
+.notif-log-time {
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #64748B;
+    flex-shrink: 0;
+}
+
+/* Lớp ẩn cho accessibility & test compatibility */
+.sr-only-notif {
+    display: none !important;
+}
+
 /* Tinh chỉnh nút bấm và form ──────────────────────────────────────────────── */
 div[data-testid="stButton"] button {
     border-radius: 8px;

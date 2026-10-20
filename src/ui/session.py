@@ -7,10 +7,12 @@ Nguyên tắc (CONTRACT mục 7):
 - Mặc định chạy Backend thật (RIDE_DISPATCH_BACKEND="real"), ném lỗi rõ ràng nếu dữ liệu hỏng.
   Hỗ trợ chạy backend giả lập bằng RIDE_DISPATCH_BACKEND="mock" hoặc tự động rơi về mock khi đặt RIDE_DISPATCH_BACKEND="auto".
 """
-from __future__ import annotations
-
+import html
 import inspect
 import os
+import time
+import uuid
+from datetime import datetime
 from typing import Any, Callable
 
 import streamlit as st
@@ -21,6 +23,7 @@ from .ports import DISPATCHER_REQUIRED
 K_DISPATCHER, K_STORAGE, K_STRATEGIES = "dispatcher", "storage", "strategies"
 K_LOCATIONS, K_MODE, K_NOTE = "locations", "backend_mode", "backend_note"
 K_FLASH, K_LAST = "flash", "last_dispatch"
+K_NOTIFICATIONS = "notifications"
 
 
 # ------------------------------------------------------------------ chọn backend
@@ -65,12 +68,13 @@ def init_session() -> None:
     st.session_state.update({
         K_STORAGE: storage, K_DISPATCHER: dispatcher, K_STRATEGIES: strategies,
         K_LOCATIONS: locations, K_MODE: mode, K_NOTE: note, K_FLASH: [], K_LAST: None,
+        K_NOTIFICATIONS: [],
     })
 
 
 def reload_from_disk() -> None:
     """Bỏ phiên hiện tại và nạp lại từ đĩa (mất lịch sử Undo/Redo)."""
-    for k in (K_DISPATCHER, K_STORAGE, K_STRATEGIES, K_LOCATIONS, K_LAST):
+    for k in (K_DISPATCHER, K_STORAGE, K_STRATEGIES, K_LOCATIONS, K_LAST, K_NOTIFICATIONS):
         st.session_state.pop(k, None)
     init_session()
 
@@ -119,23 +123,114 @@ def item_id(label: str) -> str:
 
 # ------------------------------------------------------------ thông báo & lưu trữ
 def flash(kind: str, message: str) -> None:
-    st.session_state[K_FLASH].append((kind, message))
+    """B1 & B4: Thêm thông báo vào trung tâm thông báo (tối đa 20 bản ghi)."""
+    if K_NOTIFICATIONS not in st.session_state:
+        st.session_state[K_NOTIFICATIONS] = []
+    if K_FLASH not in st.session_state:
+        st.session_state[K_FLASH] = []
+
+    notif_id = str(uuid.uuid4())[:8]
+    now_str = datetime.now().strftime("%H:%M:%S")
+
+    # B2: Khi có thao tác thành công mới -> giải phóng/ẩn error/warning trước đó
+    if kind == "success":
+        for old_n in st.session_state[K_NOTIFICATIONS]:
+            if old_n["kind"] in ("error", "warning"):
+                old_n["active"] = False
+
+    new_notif = {
+        "id": notif_id,
+        "kind": kind,
+        "message": str(message),
+        "timestamp": now_str,
+        "created_at": time.time(),
+        "active": True,
+    }
+
+    st.session_state[K_NOTIFICATIONS].append(new_notif)
+    if len(st.session_state[K_NOTIFICATIONS]) > 20:
+        st.session_state[K_NOTIFICATIONS] = st.session_state[K_NOTIFICATIONS][-20:]
+
+    st.session_state[K_FLASH].append((kind, str(message)))
+
+    # B2: st.toast(duration=...) cho phản hồi nhanh (Streamlit 1.66)
+    icon_map = {"success": "✅", "error": "🚨", "warning": "⚠️", "info": "ℹ️"}
+    try:
+        st.toast(str(message), icon=icon_map.get(kind, "ℹ️"), duration="short")
+    except Exception:
+        pass
 
 
 def render_flash() -> None:
-    for kind, message in st.session_state[K_FLASH]:
-        if kind == "success":
-            try:
-                st.toast(message, icon="✅")
-            except Exception:
-                st.success(message)
-        elif kind == "error":
-            st.error(message, icon="🚨")
-        elif kind == "warning":
-            st.warning(message, icon="⚠️")
-        else:
-            st.info(message, icon="ℹ️")
-    st.session_state[K_FLASH] = []
+    """B1-B4: Hiển thị banner thông báo nổi bật và nhật ký thao tác."""
+    if K_NOTIFICATIONS not in st.session_state:
+        st.session_state[K_NOTIFICATIONS] = []
+
+    now = time.time()
+    # B2: success/info tự ẩn sau ~8s
+    for n in st.session_state[K_NOTIFICATIONS]:
+        if n.get("active", True) and n["kind"] in ("success", "info"):
+            if now - n.get("created_at", now) >= 8.0:
+                n["active"] = False
+
+    active_notifs = [n for n in st.session_state[K_NOTIFICATIONS] if n.get("active", True)]
+
+    if active_notifs:
+        with st.container(key="notification_center"):
+            for n in active_notifs:
+                icon_map = {"success": "✅", "error": "🚨", "warning": "⚠️", "info": "ℹ️"}
+                icon = icon_map.get(n["kind"], "ℹ️")
+                kind_cls = f"notif-banner-{n['kind']}"
+
+                safe_msg = html.escape(n["message"])
+                safe_time = html.escape(n["timestamp"])
+
+                banner_html = f"""
+                <div class="notif-banner {kind_cls}">
+                    <div class="notif-banner-body">
+                        <span class="notif-banner-icon">{icon}</span>
+                        <div class="notif-banner-content">
+                            <span class="notif-banner-text">{safe_msg}</span>
+                            <span class="notif-banner-time">[{safe_time}]</span>
+                        </div>
+                    </div>
+                </div>
+                """
+                col_banner, col_close = st.columns([11, 1], vertical_alignment="center")
+                with col_banner:
+                    st.markdown(banner_html, unsafe_allow_html=True)
+                    if n["kind"] == "error":
+                        st.markdown('<div class="sr-only-notif">', unsafe_allow_html=True)
+                        st.error(n["message"])
+                        st.markdown('</div>', unsafe_allow_html=True)
+                with col_close:
+                    if st.button("✕", key=f"btn_close_notif_{n['id']}", help="Đóng thông báo"):
+                        n["active"] = False
+                        st.rerun()
+
+    # B3: Popover/Expander "Nhật ký thao tác" liệt kê 20 thông báo gần nhất
+    all_notifs = st.session_state[K_NOTIFICATIONS]
+    if all_notifs:
+        with st.expander(f"📋 Nhật ký thao tác ({len(all_notifs)}/20 gần nhất)", expanded=False):
+            for item in reversed(all_notifs):
+                icon_map = {"success": "✅", "error": "🚨", "warning": "⚠️", "info": "ℹ️"}
+                icon = icon_map.get(item["kind"], "ℹ️")
+                badge_color = {
+                    "success": "#047857",
+                    "error": "#B91C1C",
+                    "warning": "#B45309",
+                    "info": "#1D4ED8",
+                }.get(item["kind"], "#475569")
+                st.markdown(
+                    f"""
+                    <div class="notif-log-item">
+                        <span class="notif-log-time">[{html.escape(item['timestamp'])}]</span>
+                        <span style="color: {badge_color}; font-weight: 600;">{icon} {html.escape(item['kind'].upper())}:</span>
+                        <span>{html.escape(item['message'])}</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
 
 def commit() -> bool:

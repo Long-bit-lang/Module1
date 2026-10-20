@@ -374,6 +374,24 @@ def test_panel_toggle_changes_panel_open(app):
     assert app.session_state["panel_open"] is True
 
 
+def test_success_notification_persists_after_one_rerun(app):
+    """Ràng buộc 5: Thông báo success còn tồn tại sau một rerun trong trung tâm thông báo."""
+    # 1. Thực hiện thao tác tạo yêu cầu đặt xe thành công qua widget
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+
+    # Kiểm tra ngay sau thao tác: có thông báo success đang active
+    notifs = app.session_state["notifications"]
+    assert any(n["kind"] == "success" and "Đã tạo yêu cầu" in n["message"] and n["active"] for n in notifs)
+
+    # 2. Sau thêm một lần rerun nữa (chưa quá 8s), thông báo success vẫn tồn tại và active
+    app.run()
+    notifs_after = app.session_state["notifications"]
+    assert any(n["kind"] == "success" and "Đã tạo yêu cầu" in n["message"] and n["active"] for n in notifs_after)
+
+
+
 
 
 
