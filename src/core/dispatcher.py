@@ -133,7 +133,14 @@ class Dispatcher:
             raise ValueError('Chiến lược trả về ETA không hợp lệ')
 
         driver = self.drivers[result.driver_id]
-        trip = Trip(f'T{self._next_trip_id}', request.id, driver.id, result.eta)
+        pickup_path = list(result.path) if result.path else []
+        trip = Trip(
+            f'T{self._next_trip_id}',
+            request.id,
+            driver.id,
+            result.eta,
+            pickup_path=pickup_path,
+        )
         removed_request = self.queue.dequeue()
         if removed_request is not request:
             raise RuntimeError("Hàng đợi không đồng bộ với yêu cầu điều phối")
@@ -142,6 +149,65 @@ class Dispatcher:
         self.trips.append(trip)
         self._next_trip_id += 1
         return trip
+
+    def trip_route(self, trip_id: str) -> dict | None:
+        """Truy xuất thông tin đầy đủ về lộ trình 2 chặng của một chuyến xe.
+
+        Trả về:
+            {
+                "pickup_path": list[str],
+                "ride_path": list[str],
+                "pickup_eta": float,
+                "ride_eta": float | None,
+                "pickup_known": bool,
+            }
+            hoặc None nếu không tìm thấy trip hoặc request.
+        """
+        trip = next((t for t in self.trips if t.id == trip_id), None)
+        if trip is None:
+            return None
+        request = self.all_requests.get(trip.request_id)
+        if request is None:
+            return None
+
+        # 1. Chặng chở khách (ride_path & ride_eta)
+        r_eta, r_path, _ = shortest_path(self.graph, request.pickup_node, request.dropoff_node)
+        if r_eta is not None and r_path:
+            ride_eta = float(r_eta)
+            ride_path = list(r_path)
+        else:
+            ride_eta = None
+            ride_path = []
+
+        # 2. Chặng đón khách (pickup_path & pickup_known)
+        if trip.pickup_path:
+            pickup_path = list(trip.pickup_path)
+            pickup_known = True
+        elif trip.status == ASSIGNED:
+            driver = self.drivers.get(trip.driver_id)
+            if driver is not None:
+                p_eta, p_path, _ = shortest_path(self.graph, driver.node, request.pickup_node)
+                if p_path:
+                    pickup_path = list(p_path)
+                    pickup_known = True
+                else:
+                    pickup_path = []
+                    pickup_known = False
+            else:
+                pickup_path = []
+                pickup_known = False
+        else:
+            pickup_path = []
+            pickup_known = False
+
+        return {
+            "pickup_path": pickup_path,
+            "ride_path": ride_path,
+            "pickup_eta": float(trip.eta),
+            "ride_eta": ride_eta,
+            "pickup_known": pickup_known,
+        }
+
 
     def dispatch_all(self, strategy: MatchStrategy) -> list[Trip]:
         trips: list[Trip] = []

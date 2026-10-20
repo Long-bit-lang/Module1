@@ -524,3 +524,111 @@ def test_export_from_state_preserves_cancelled_trip_and_request(graph_for_dispat
     assert restored.drivers['D1'].status == FREE
 
 
+def test_dispatch_next_saves_pickup_path_matching_result_a1_and_a2(graph_for_dispatcher):
+    """Kiểm tra dispatch_next lưu đúng pickup_path từ MatchResult.path của cả A1 và A2."""
+    from core.strategies import DijkstraPerDriver, ReverseDijkstra
+
+    # Test với A1
+    dispatcher1 = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1')})
+    dispatcher1.submit_request('N3', 'N4')
+    trip1 = dispatcher1.dispatch_next(DijkstraPerDriver())
+    assert trip1 is not None
+    assert trip1.pickup_path == ['N1', 'N2', 'N3']
+    assert trip1.pickup_path == dispatcher1.last_match_result.path
+
+    # Test với A2
+    dispatcher2 = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1')})
+    dispatcher2.submit_request('N3', 'N4')
+    trip2 = dispatcher2.dispatch_next(ReverseDijkstra())
+    assert trip2 is not None
+    assert trip2.pickup_path == ['N1', 'N2', 'N3']
+    assert trip2.pickup_path == dispatcher2.last_match_result.path
+
+
+def test_trip_route_persists_after_complete_trip(graph_for_dispatcher):
+    """complete_trip xong thì trip_route vẫn trả đúng pickup_path và ride_path dù driver.node đã đổi."""
+    from core.strategies import DijkstraPerDriver
+
+    dispatcher = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1')})
+    dispatcher.submit_request('N3', 'N4')
+    trip = dispatcher.dispatch_next(DijkstraPerDriver())
+    assert trip.pickup_path == ['N1', 'N2', 'N3']
+
+    # Hoàn thành chuyến: tài xế di chuyển sang N4
+    assert dispatcher.complete_trip(trip.id) is True
+    assert dispatcher.drivers['D1'].node == 'N4'
+    assert trip.status == COMPLETED
+
+    # Lấy thông tin lộ trình qua trip_route
+    route = dispatcher.trip_route(trip.id)
+    assert route is not None
+    assert route['pickup_path'] == ['N1', 'N2', 'N3']
+    assert route['ride_path'] == ['N3', 'N4']
+    assert route['pickup_known'] is True
+    assert route['pickup_eta'] == trip.eta
+    assert route['ride_eta'] == 4.0
+
+
+def test_trip_route_fallback_for_assigned_trip_without_pickup_path(graph_for_dispatcher):
+    """Chuyến ASSIGNED không có pickup_path (như seed T2) suy ra từ vị trí tài xế (driver.node)."""
+    dispatcher = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1', status=BUSY)})
+    # Thêm request R1 (N3 -> N4) và Trip T1 ASSIGNED không có pickup_path
+    req = RideRequest('R1', 'N3', 'N4', status=ASSIGNED)
+    trip = Trip('T1', 'R1', 'D1', 3.0, status=ASSIGNED, pickup_path=[])
+    dispatcher.all_requests['R1'] = req
+    dispatcher.trips.append(trip)
+
+    route = dispatcher.trip_route('T1')
+    assert route is not None
+    assert route['pickup_known'] is True
+    assert route['pickup_path'] == ['N1', 'N2', 'N3']
+    assert route['ride_path'] == ['N3', 'N4']
+    assert route['pickup_eta'] == 3.0
+
+
+def test_trip_route_completed_trip_without_pickup_path_returns_pickup_not_known(graph_for_dispatcher):
+    """Chuyến COMPLETED không có pickup_path (như seed T1) trả pickup_known=False và pickup_path=[]."""
+    dispatcher = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N4')})
+    req = RideRequest('R1', 'N3', 'N4', status=ASSIGNED)
+    trip = Trip('T1', 'R1', 'D1', 3.0, status=COMPLETED, pickup_path=[])
+
+    dispatcher.all_requests['R1'] = req
+    dispatcher.trips.append(trip)
+
+    route = dispatcher.trip_route('T1')
+    assert route is not None
+    assert route['pickup_known'] is False
+    assert route['pickup_path'] == []
+    assert route['ride_path'] == ['N3', 'N4']
+    assert route['ride_eta'] == 4.0
+
+
+def test_trip_route_nonexistent_trip_or_request_returns_none(graph_for_dispatcher):
+    """trip không tồn tại hoặc request bị thiếu thì trip_route trả về None."""
+    dispatcher = Dispatcher(graph_for_dispatcher, {})
+    assert dispatcher.trip_route('NON_EXISTENT') is None
+
+    # Trip có nhưng request không có trong all_requests
+    trip = Trip('T1', 'R_GHOST', 'D1', 3.0)
+    dispatcher.trips.append(trip)
+    assert dispatcher.trip_route('T1') is None
+
+
+def test_trip_route_unreachable_dropoff_returns_empty_ride_path(graph_for_dispatcher):
+    """Nếu không có đường từ pickup_node đến dropoff_node thì ride_path=[] và ride_eta=None."""
+    # Đỉnh N5 là đỉnh cô lập (không có cạnh đi tới từ N3)
+    dispatcher = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1')})
+    req = RideRequest('R1', 'N3', 'N5', status=ASSIGNED)
+    trip = Trip('T1', 'R1', 'D1', 3.0, status=ASSIGNED, pickup_path=['N1', 'N2', 'N3'])
+    dispatcher.all_requests['R1'] = req
+    dispatcher.trips.append(trip)
+
+    route = dispatcher.trip_route('T1')
+    assert route is not None
+    assert route['pickup_path'] == ['N1', 'N2', 'N3']
+    assert route['ride_path'] == []
+    assert route['ride_eta'] is None
+    assert route['pickup_known'] is True
+
+
+
