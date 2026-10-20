@@ -27,8 +27,11 @@ def _d(at):
 
 def test_app_starts_without_exception(app):
     assert not app.exception
-    assert [t.label for t in app.tabs] == [
-        "Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán"]
+    # A1: Điều hướng bằng st.sidebar radio key="main_nav" thay cho st.tabs
+    assert app.sidebar.radio(key="main_nav").options == [
+        "Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán"
+    ]
+    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
 
 
 def test_full_flow_submit_dispatch_undo_redo_complete(app):
@@ -82,12 +85,16 @@ def test_busy_driver_cannot_be_removed(app):
 
 
 def test_benchmark_tab_runs_and_strategies_agree(app):
+    app.sidebar.radio(key="main_nav").set_value("Đối chuẩn thuật toán").run()
+    assert app.session_state["main_nav"] == "Đối chuẩn thuật toán"
     app.button(key="btn_bench").click().run()
     assert not app.exception
     assert any("cùng tài xế và ETA" in s.value for s in app.success)
 
 
 def test_benchmark_document_case_runs_and_shows_speedup(app):
+    app.sidebar.radio(key="main_nav").set_value("Đối chuẩn thuật toán").run()
+    assert app.session_state["main_nav"] == "Đối chuẩn thuật toán"
     app.button(key="btn_run_doc_bench").click().run()
     assert not app.exception
     assert any("Giảm số đỉnh duyệt" in s.value for s in app.success)
@@ -110,21 +117,19 @@ def test_real_backend_dispatch_persists_and_tiebreaks(real_app, tmp_path):
 
 
 def test_tab_selection_persists_on_widget_interaction(app):
-    # Ban đầu tab mặc định là "Quản lý dữ liệu"
-    assert app.session_state["active_tab"] == "Quản lý dữ liệu"
+    # Ban đầu trang mặc định là "Quản lý dữ liệu"
+    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
 
-    # Người dùng chuyển tab bằng cách chọn "Điều phối chuyến" trên widget st.tabs (key="main_tabs")
-    app.session_state["main_tabs"] = "Điều phối chuyến"
-    app.run()
-    assert app.session_state["active_tab"] == "Điều phối chuyến"
+    # Người dùng chuyển trang sang "Điều phối chuyến" bằng st.sidebar.radio key="main_nav"
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert app.session_state["main_nav"] == "Điều phối chuyến"
 
-    # Người dùng tương tác với widget bên trong tab (đổi điểm trả khách)
+    # Người dùng tương tác với widget bên trong Action Panel (đổi điểm trả khách)
     _pick(app, "req_dropoff", "N4")
     app.run()
 
-    # Tab đang chọn vẫn là "Điều phối chuyến", không bị reset về tab đầu tiên "Quản lý dữ liệu"
-    assert app.session_state["active_tab"] == "Điều phối chuyến"
-    assert app.session_state["main_tabs"] == "Điều phối chuyến"
+    # Trang đang chọn vẫn là "Điều phối chuyến", radio không bị reset khi rerun
+    assert app.session_state["main_nav"] == "Điều phối chuyến"
 
 
 def test_reset_to_seed_restores_data(real_app, tmp_path):
@@ -152,7 +157,7 @@ def test_map_data_zoom_buttons_and_limits(app):
     app.button(key="map_data_zoom_in").click().run()
     assert not app.exception
     assert app.session_state["map_data_zoom_level"] == 120
-    assert app.session_state["active_tab"] == "Quản lý dữ liệu"
+    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
 
     # Nhấn phóng to liên tục để chạm trần 300%
     while app.session_state["map_data_zoom_level"] < 300:
@@ -167,7 +172,7 @@ def test_map_data_zoom_buttons_and_limits(app):
     app.button(key="map_data_zoom_reset").click().run()
     assert not app.exception
     assert app.session_state["map_data_zoom_level"] == 100
-    assert app.session_state["active_tab"] == "Quản lý dữ liệu"
+    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
 
     # Nhấn thu nhỏ liên tục để chạm sàn 50%
     while app.session_state["map_data_zoom_level"] > 50:
@@ -177,35 +182,34 @@ def test_map_data_zoom_buttons_and_limits(app):
     # Bấm thêm lần nữa -> không tụt dưới 50%
     app.button(key="map_data_zoom_out").click().run()
     assert app.session_state["map_data_zoom_level"] == 50
-    assert app.session_state["active_tab"] == "Quản lý dữ liệu"
+    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
 
 
 def test_map_dispatch_zoom_controls_and_tab_persistence(app):
     """Kiểm tra điều khiển zoom trên tab Điều phối chuyến và xác nhận không bị reset tab."""
-    # Chuyển tab sang Điều phối chuyến
-    app.session_state["main_tabs"] = "Điều phối chuyến"
-    app.run()
-    assert app.session_state["active_tab"] == "Điều phối chuyến"
+    # Chuyển trang sang Điều phối chuyến
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert app.session_state["main_nav"] == "Điều phối chuyến"
     assert app.session_state.get("map_dispatch_zoom_level") == 100
 
     # Phóng to bản đồ điều phối
     app.button(key="map_dispatch_zoom_in").click().run()
     assert not app.exception
     assert app.session_state["map_dispatch_zoom_level"] == 120
-    # Tab vẫn giữ nguyên là Điều phối chuyến, không bị văng về Quản lý dữ liệu
-    assert app.session_state["active_tab"] == "Điều phối chuyến"
+    # Trang vẫn giữ nguyên là Điều phối chuyến, không bị văng về Quản lý dữ liệu
+    assert app.session_state["main_nav"] == "Điều phối chuyến"
 
     # Vừa khung
     app.button(key="map_dispatch_zoom_reset").click().run()
     assert not app.exception
     assert app.session_state["map_dispatch_zoom_level"] == 100
-    assert app.session_state["active_tab"] == "Điều phối chuyến"
+    assert app.session_state["main_nav"] == "Điều phối chuyến"
 
     # Thu nhỏ
     app.button(key="map_dispatch_zoom_out").click().run()
     assert not app.exception
     assert app.session_state["map_dispatch_zoom_level"] == 80
-    assert app.session_state["active_tab"] == "Điều phối chuyến"
+    assert app.session_state["main_nav"] == "Điều phối chuyến"
 
 
 def test_build_dot_validity_and_escaping():
@@ -304,9 +308,8 @@ def test_map_canvas_containers_and_zoom_levels(app):
     container_keys = [c.key for c in app.container if c.key]
     assert "map_data_canvas" in container_keys
 
-    # 2. Chuyển tab sang 'Điều phối chuyến' -> kiểm tra key 'map_dispatch_canvas'
-    app.session_state["main_tabs"] = "Điều phối chuyến"
-    app.run()
+    # 2. Chuyển trang sang 'Điều phối chuyến' -> kiểm tra key 'map_dispatch_canvas'
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
     assert not app.exception
     container_keys = [c.key for c in app.container if c.key]
     assert "map_dispatch_canvas" in container_keys
@@ -326,6 +329,50 @@ def test_map_canvas_containers_and_zoom_levels(app):
     assert app.session_state["map_dispatch_zoom_level"] == 300
     container_keys = [c.key for c in app.container if c.key]
     assert "map_dispatch_canvas" in container_keys
+
+
+def test_page_switch_preserves_dispatcher_and_undo(app):
+    """Ràng buộc 5: Đổi trang không làm mất trạng thái dispatcher và ngăn xếp Undo/Redo."""
+    # 1. Tạo yêu cầu và điều phối chuyến trên Action panel
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    app.button(key="btn_dispatch").click().run()
+    assert _d(app).can_undo()
+    assert len(_d(app).trips_snapshot()) == 1
+
+    # 2. Chuyển sang trang "Quản lý dữ liệu"
+    app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
+    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
+    assert _d(app).can_undo()
+    assert len(_d(app).trips_snapshot()) == 1
+
+    # 3. Chuyển sang trang "Đối chuẩn thuật toán"
+    app.sidebar.radio(key="main_nav").set_value("Đối chuẩn thuật toán").run()
+    assert app.session_state["main_nav"] == "Đối chuẩn thuật toán"
+    assert _d(app).can_undo()
+
+    # 4. Chuyển lại "Điều phối chuyến" và thực hiện Undo thành công
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert app.session_state["main_nav"] == "Điều phối chuyến"
+    assert _d(app).can_undo()
+    app.button(key="btn_undo").click().run()
+    assert not _d(app).can_undo()
+    assert len(_d(app).trips_snapshot()) == 0
+    assert len(_d(app).queue_snapshot()) == 1
+
+
+def test_panel_toggle_changes_panel_open(app):
+    """Ràng buộc 5: Nhấn nút nổi btn_toggle_panel làm đổi trạng thái session_state['panel_open']."""
+    assert app.session_state.get("panel_open", True) is True
+    # Nhấn toggle để đóng panel
+    app.button(key="btn_toggle_panel").click().run()
+    assert app.session_state["panel_open"] is False
+
+    # Nhấn toggle lần nữa để mở lại panel
+    app.button(key="btn_toggle_panel").click().run()
+    assert app.session_state["panel_open"] is True
+
 
 
 

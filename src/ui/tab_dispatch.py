@@ -210,205 +210,63 @@ def render() -> None:
     trips = d.trips_snapshot()
     free_count = sum(1 for x in drivers.values() if x.status == FREE)
 
-    # Khung 1: Tạo yêu cầu & Hàng đợi
-    col_req, col_queue = st.columns([2, 3])
-
-    with col_req:
-        st.subheader("Đặt xe mới")
-        with st.container(border=True):
-            st.selectbox("Điểm đón khách", labels, key="req_pickup", help="Chọn vị trí đón khách trên mạng lưới giao thông")
-            st.selectbox(
-                "Điểm trả khách",
-                labels,
-                key="req_dropoff",
-                index=min(1, len(labels) - 1),
-                help="Chọn địa điểm đến của hành khách",
+    # Khung 1: Hàng đợi yêu cầu FIFO
+    st.subheader(f"Hàng đợi yêu cầu FIFO ({len(queue)})")
+    with st.container(border=True):
+        if queue:
+            st.dataframe(_queue_table(queue), hide_index=True, width="stretch", height=150)
+        else:
+            render_empty_state(
+                "📭",
+                "Hàng đợi yêu cầu đang trống",
+                "Hiện không có khách nào đang chờ điều phối xe.",
+                "Sử dụng mục '(1) Đặt xe' trên Bảng thao tác bên phải rồi nhấn 'Gửi yêu cầu'.",
             )
-
-            # Live preview ước tính hành trình
-            cur_p = S.item_id(st.session_state.get("req_pickup", labels[0]))
-            cur_d = S.item_id(st.session_state.get("req_dropoff", labels[min(1, len(labels) - 1)]))
-
-            if cur_p == cur_d:
-                st.warning("⚠️ Điểm đón và điểm trả đang trùng nhau. Vui lòng chọn 2 điểm khác nhau.")
-            else:
-                est = d.ride_estimate(cur_p, cur_d) if hasattr(d, "ride_estimate") else None
-                if est:
-                    eta_val, path_nodes = est
-                    path_preview = " ➔ ".join(S.node_label(n) for n in path_nodes)
-                    st.markdown(
-                        f"""
-                        <div class="ride-preview-card">
-                            ⏱️ <b>Ước tính chuyến đi:</b> ~<b>{eta_val:g} phút</b> ({len(path_nodes) - 1} chặng)<br>
-                            <span style="font-size: 0.8rem; color: #166534;">
-                                <b>Lộ trình:</b> {html.escape(path_preview)}
-                            </span>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.markdown(
-                        """
-                        <div class="ride-preview-card warning-preview">
-                            ⚠️ <b>Không có tuyến đường:</b> Không tìm thấy đường đi từ điểm đón đến điểm trả
-                            (do đường một chiều hoặc đồ thị không liên thông).
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-            st.button(
-                "Gửi yêu cầu",
-                on_click=_on_submit,
-                key="btn_submit",
-                type="primary",
-                width="stretch",
-                help="Đưa yêu cầu đặt xe vào cuối hàng đợi FIFO",
-            )
-
-    with col_queue:
-        st.subheader(f"Hàng đợi yêu cầu FIFO ({len(queue)})")
-        with st.container(border=True):
-            if queue:
-                st.dataframe(_queue_table(queue), hide_index=True, width="stretch", height=150)
-                cq1, cq2 = st.columns([3, 1.5], vertical_alignment="bottom")
-                with cq1:
-                    st.selectbox(
-                        "Chọn yêu cầu cần hủy",
-                        [f"{r.id} ({S.node_label(r.pickup_node)} → {S.node_label(r.dropoff_node)})" for r in queue],
-                        key="cancel_req_select",
-                    )
-                with cq2:
-                    if st.button(
-                        "Hủy yêu cầu",
-                        key="btn_cancel_request",
-                        type="secondary",
-                        width="stretch",
-                        help="Hủy yêu cầu khỏi hàng đợi FIFO (xử lý tình huống nghẽn đầu hàng nếu không có xe đón được)",
-                    ):
-                        st.session_state["show_cancel_dialog"] = True
-
-                if st.session_state.get("show_cancel_dialog"):
-                    req_val = st.session_state.get("cancel_req_select", "")
-                    _confirm_cancel_dialog(req_val)
-            else:
-                render_empty_state(
-                    "📭",
-                    "Hàng đợi yêu cầu đang trống",
-                    "Hiện không có khách nào đang chờ điều phối xe.",
-                    "Chọn điểm đón và điểm trả ở cột bên trái rồi nhấn 'Gửi yêu cầu'.",
-                )
+        st.caption("💡 *Đặt xe mới, hủy yêu cầu, hoặc nhấn Ghép chuyến / Undo / Redo trên **Bảng thao tác bên phải**.*")
 
     # Hiển thị nút giải phóng nghẽn hàng nếu nguyên nhân là no_route
     if getattr(d, "last_failure", None) == "no_route" and queue:
         st.warning(
             f"⚠️ **Yêu cầu đầu hàng ({queue[0].id}: {S.node_label(queue[0].pickup_node)} → {S.node_label(queue[0].dropoff_node)})** "
-            "không có tài xế nào tiếp cận được do đường một chiều. Bạn có thể hủy yêu cầu này để tiếp tục xử lý các yêu cầu kế tiếp."
+            "không có tài xế nào tiếp cận được do đường một chiều. Bạn có thể hủy yêu cầu này trên Bảng thao tác bên phải để tiếp tục xử lý các yêu cầu kế tiếp."
         )
 
     st.divider()
 
-    # Khung 2: Trung tâm điều phối chuyến & Undo/Redo
-    st.subheader("Trung tâm Điều phối")
-    with st.container(border=True):
-        col_algo, col_b1, col_b2 = st.columns([3, 1.5, 1.5], vertical_alignment="bottom")
-        with col_algo:
-            st.selectbox(
-                "Thuật toán tìm tài xế tối ưu",
-                list(S.strategies()),
-                key="strategy_name",
-                help="A1: Dijkstra từ từng tài xế rảnh | A2: Dijkstra đảo chiều từ điểm đón",
-            )
-        with col_b1:
-            st.button(
-                f"Ghép chuyến ({free_count} xe rảnh)",
-                on_click=_on_dispatch,
-                key="btn_dispatch",
-                type="primary",
-                disabled=not queue,
-                width="stretch",
-                help="Lấy yêu cầu ở đầu hàng đợi và điều phối tài xế có thời gian đến nhanh nhất",
-            )
-        with col_b2:
-            if hasattr(d, "dispatch_all"):
-                st.button(
-                    f"Ghép tất cả ({len(queue)})",
-                    on_click=_on_dispatch_all,
-                    key="btn_dispatch_all",
-                    disabled=not queue,
-                    width="stretch",
-                    help="Ghép liên tiếp đến khi hết hàng đợi hoặc hết tài xế",
-                )
-
-        st.markdown("**Lịch sử thao tác (Undo / Redo):**")
-        col_undo, col_redo, _ = st.columns([1.5, 1.5, 5])
-        with col_undo:
-            st.button(
-                "↩ Undo",
-                on_click=_on_undo,
-                key="btn_undo",
-                disabled=not d.can_undo(),
-                width="stretch",
-                help="Hoàn tác lần điều phối gần nhất: yêu cầu quay lại hàng đợi, tài xế trở về trạng thái rảnh",
-            )
-        with col_redo:
-            st.button(
-                "↪ Redo",
-                on_click=_on_redo,
-                key="btn_redo",
-                disabled=not d.can_redo(),
-                width="stretch",
-                help="Làm lại thao tác điều phối vừa hoàn tác",
-            )
-
-    # Hiển thị kết quả điều phối riêng biệt
+    # Khung 2: Thẻ Kết quả điều phối nổi bật (Hạng mục C)
     _render_last_result()
 
-    # Bản đồ điều phối có lộ trình
+    # Khung 3: Bản đồ điều phối có lộ trình
     _render_map(d, queue, drivers)
 
     st.divider()
 
-    # Khung 3: Danh sách các Chuyến xe
+    # Khung 4: Danh sách các Chuyến xe (Lịch sử chỉ đọc - D3)
     st.subheader(f"Danh sách Chuyến xe ({len(trips)})")
     if not trips:
         render_empty_state(
             "🚕",
             "Chưa có chuyến xe nào",
             "Hệ thống chưa tạo chuyến xe nào trong phiên làm việc này.",
-            "Nhấn nút 'Ghép chuyến' ở trên để điều phối yêu cầu đang chờ trong hàng đợi.",
+            "Nhấn nút 'Ghép chuyến' trên Bảng thao tác bên phải để điều phối yêu cầu đang chờ trong hàng đợi.",
         )
         return
 
     with st.container(border=True):
-        head = st.columns([1, 1, 2, 1, 1.5, 1.5])
-        for col, title in zip(head, ["Mã chuyến", "Yêu cầu", "Tài xế", "ETA (phút)", "Trạng thái", "Thao tác"]):
+        head = st.columns([1, 1, 2, 1, 1.5])
+        for col, title in zip(head, ["Mã chuyến", "Yêu cầu", "Tài xế", "ETA (phút)", "Trạng thái"]):
             col.markdown(f"**{title}**")
 
         st.divider()
 
         for t in reversed(trips):
-            row = st.columns([1, 1, 2, 1, 1.5, 1.5], vertical_alignment="center")
+            row = st.columns([1, 1, 2, 1, 1.5], vertical_alignment="center")
             row[0].write(f"**{t.id}**")
             row[1].write(t.request_id)
             driver_obj = drivers.get(t.driver_id)
             row[2].write(f"{t.driver_id} – {driver_obj.name}" if driver_obj else t.driver_id)
             row[3].write(f"{t.eta:g}")
             row[4].markdown(get_status_badge_html(t.status), unsafe_allow_html=True)
-
-            if t.status == ASSIGNED:
-                row[5].button(
-                    "Hoàn thành",
-                    key=f"btn_complete_{t.id}",
-                    on_click=_on_complete,
-                    args=(t.id,),
-                    help="Kết thúc chuyến: tài xế di chuyển tới điểm trả khách và trở về rảnh",
-                    type="secondary",
-                    width="stretch",
-                )
-            else:
-                row[5].write("—")
 
 
 def render_demo_stepper() -> None:

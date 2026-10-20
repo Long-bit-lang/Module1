@@ -46,7 +46,18 @@ active_trips = sum(1 for t in trips if t.status == ASSIGNED)
 completed_trips = sum(1 for t in trips if t.status == COMPLETED)
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
+NAV_PAGES = ["Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán"]
+
 with st.sidebar:
+    st.markdown("### 🧭 Điều hướng Hệ thống")
+    current_page = st.radio(
+        "Điều hướng hệ thống",
+        NAV_PAGES,
+        key="main_nav",
+        label_visibility="collapsed",
+    )
+
+    st.divider()
     st.markdown("### ⚙️ Trạng thái Hệ thống")
     if st.session_state[session.K_MODE] == "mock":
         st.warning("Đang chạy backend **giả lập** (mock)")
@@ -119,9 +130,9 @@ with st.expander("🚀 Bắt đầu nhanh (3 bước trải nghiệm luồng ngh
         """
         <div class="quick-start-box">
             <div style="margin-bottom: 0.6rem; line-height: 1.65;">
-                <span class="qs-step">1</span><b>Đặt xe mới:</b> Chọn điểm đón & trả khách tại tab <i>"Điều phối chuyến"</i> → nhấn <b>"Gửi yêu cầu"</b> (xếp vào hàng đợi FIFO).<br>
-                <span class="qs-step">2</span><b>Ghép chuyến tối ưu:</b> Chọn thuật toán <b>A1</b> (Dijkstra từng tài xế) hoặc <b>A2</b> (Dijkstra đảo chiều) → nhấn <b>"Ghép chuyến"</b> (hệ thống tự động chọn xe đón nhanh nhất).<br>
-                <span class="qs-step">3</span><b>Hoàn tác & Hoàn thành:</b> Nhấn <b>"Undo"</b> để hủy gán chuyến đưa yêu cầu về đầu hàng đợi; hoặc nhấn <b>"Hoàn thành"</b> để kết thúc cuốc và giải phóng tài xế tại điểm trả khách.
+                <span class="qs-step">1</span><b>Đặt xe mới:</b> Mở panel thao tác bên phải → chọn điểm đón & trả khách tại mục <i>"(1) Đặt xe"</i> → nhấn <b>"Gửi yêu cầu"</b>.<br>
+                <span class="qs-step">2</span><b>Ghép chuyến tối ưu:</b> Tại mục <i>"(3) Điều phối"</i> chọn thuật toán <b>A1</b> (Dijkstra từng tài xế) hoặc <b>A2</b> (Dijkstra đảo chiều) → nhấn <b>"Ghép chuyến"</b>.<br>
+                <span class="qs-step">3</span><b>Hoàn tác & Hoàn thành:</b> Nhấn <b>"Undo"</b> để hủy gán chuyến; hoặc nhấn <b>"Hoàn thành chuyến"</b> trong danh sách đang chạy để kết thúc cuốc và giải phóng tài xế.
             </div>
             <div style="font-size: 0.82rem; color: #475569; border-top: 1px dashed #CBD5E1; padding-top: 0.45rem; margin-top: 0.45rem;">
                 <b>Ý nghĩa màu sắc trên bản đồ:</b> 🟢 Viền xanh lá = Xe rảnh &nbsp;|&nbsp; 🔴 Viền đỏ = Xe bận &nbsp;|&nbsp; 🟠 Viền cam = Điểm đón đang chờ &nbsp;|&nbsp; ── Xanh lá = Đón khách &nbsp;|&nbsp; ╌╌ Cam nét đứt = Chở khách
@@ -136,31 +147,42 @@ if st.session_state.get("demo_mode"):
     from ui.tab_dispatch import render_demo_stepper
     render_demo_stepper()
 
-# ── Flash messages (ngay trước tabs, gần khu vực thao tác) ────────────────────
+# ── Flash messages (ngay trước nội dung trang chính) ──────────────────────────
 session.render_flash()
 
-# ── Tabs ──────────────────────────────────────────────────────────────────────
-TAB_NAMES = ["Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán"]
-
-
-def _on_tab_change() -> None:
-    st.session_state["active_tab"] = st.session_state["main_tabs"]
-
-
-if "active_tab" not in st.session_state:
-    st.session_state["active_tab"] = TAB_NAMES[0]
-elif "main_tabs" in st.session_state and st.session_state["main_tabs"] in TAB_NAMES:
-    st.session_state["active_tab"] = st.session_state["main_tabs"]
-
-t_data, t_dispatch, t_bench = st.tabs(
-    TAB_NAMES,
-    default=st.session_state["active_tab"],
-    key="main_tabs",
-    on_change=_on_tab_change,
-)
-with t_data:
+# ── Render nội dung trang được chọn (A1: Bỏ st.tabs, chỉ gọi trang được chọn) ─
+if current_page == "Quản lý dữ liệu":
     tab_data.render()
-with t_dispatch:
+elif current_page == "Điều phối chuyến":
     tab_dispatch.render()
-with t_bench:
+else:
     tab_benchmark.render()
+
+# ── Panel thao tác bên phải (A2: Luôn render để widget keys không bị mất) ─────
+from ui.panel import render_action_panel
+render_action_panel()
+
+# Bố cục phản hồi: điều chỉnh khoảng cách đệm (padding) của vùng chính theo trạng thái panel
+if st.session_state.get("panel_open", True):
+    st.markdown(
+        """
+        <style>
+        .st-key-action_panel { transform: translateX(0) !important; }
+        .main .block-container { padding-right: 380px !important; }
+        @media (max-width: 1024px) {
+            .main .block-container { padding-right: 1rem !important; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        """
+        <style>
+        .st-key-action_panel { transform: translateX(100%) !important; pointer-events: none !important; box-shadow: none !important; }
+        .main .block-container { padding-right: 1rem !important; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )

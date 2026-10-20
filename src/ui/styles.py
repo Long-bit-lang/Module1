@@ -378,6 +378,93 @@ div[class*="st-key-"][class*="_canvas"] .stGraphVizChart > svg {
     color: #92400E;
 }
 
+/* ── 10. Menu điều hướng dọc Sidebar (main_nav) ─────────────────────────── */
+.st-key-main_nav {
+    margin-bottom: 0.5rem;
+}
+.st-key-main_nav div[role="radiogroup"] {
+    gap: 0.35rem;
+    display: flex;
+    flex-direction: column;
+}
+.st-key-main_nav div[role="radiogroup"] label {
+    display: flex !important;
+    align-items: center !important;
+    padding: 0.55rem 0.85rem !important;
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+    color: #334155 !important;
+    cursor: pointer !important;
+    transition: all 150ms ease !important;
+    border: 1px solid transparent !important;
+}
+.st-key-main_nav div[role="radiogroup"] label:hover {
+    background: #F1F5F9 !important;
+    color: #1E293B !important;
+}
+/* Mục đang chọn tô nền #2563EB nhạt (#EFF6FF), bo góc 8px */
+.st-key-main_nav div[role="radiogroup"] label:has(input:checked) {
+    background: #EFF6FF !important;
+    color: #1D4ED8 !important;
+    border: 1px solid #BFDBFE !important;
+    font-weight: 600 !important;
+}
+/* Ẩn chấm tròn radio mặc định để giống menu thanh lịch */
+.st-key-main_nav div[role="radiogroup"] label div:first-child {
+    display: none !important;
+}
+
+/* ── 11. Panel thao tác bên phải (Action Panel) ─────────────────────────── */
+.st-key-action_panel {
+    position: fixed !important;
+    right: 0 !important;
+    top: 3.5rem !important;
+    width: 360px !important;
+    height: calc(100vh - 3.5rem) !important;
+    overflow-y: auto !important;
+    background: #FFFFFF !important;
+    border-left: 1px solid #E2E8F0 !important;
+    box-shadow: -4px 0 20px rgba(15, 23, 42, 0.08) !important;
+    z-index: 990 !important;
+    padding: 1rem 0.85rem !important;
+    transition: transform 200ms ease-in-out !important;
+}
+
+/* Nút bật/tắt panel nổi ở góc trên bên phải */
+.st-key-btn_toggle_panel {
+    position: fixed !important;
+    right: 1.25rem !important;
+    top: 0.65rem !important;
+    z-index: 999 !important;
+}
+.st-key-btn_toggle_panel button {
+    background: #2563EB !important;
+    color: #FFFFFF !important;
+    border: 1px solid #1D4ED8 !important;
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25) !important;
+    font-size: 0.82rem !important;
+    padding: 0.35rem 0.8rem !important;
+}
+.st-key-btn_toggle_panel button:hover {
+    background: #1D4ED8 !important;
+    color: #FFFFFF !important;
+}
+
+.panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
+    border-bottom: 1.5px solid #E2E8F0;
+}
+.panel-header-title {
+    font-size: 0.88rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #1E3A8A;
+}
+
 /* Tinh chỉnh nút bấm và form ──────────────────────────────────────────────── */
 div[data-testid="stButton"] button {
     border-radius: 8px;

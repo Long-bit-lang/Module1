@@ -162,61 +162,7 @@ def render() -> None:
     st.subheader("Quản lý Đội ngũ Tài xế")
     st.dataframe(_drivers_table(drivers), hide_index=True, width="stretch")
 
-    col_add, col_edit = st.columns(2)
-    with col_add:
-        st.markdown("##### Thêm tài xế mới")
-        with st.form("form_add_driver", border=True):
-            st.text_input("Tên tài xế", key="add_name", placeholder="Nhập họ tên tài xế...")
-            st.selectbox("Vị trí xuất phát", labels, key="add_node")
-            st.form_submit_button("Thêm tài xế", on_click=_on_add_driver, type="primary", width="stretch")
-
-    with col_edit:
-        st.markdown("##### Cập nhật hoặc Xóa tài xế")
-        if drivers:
-            with st.container(border=True):
-                chosen = S.item_id(
-                    st.selectbox(
-                        "Chọn tài xế",
-                        [f"{i} – {x.name}" for i, x in drivers.items()],
-                        key="edit_driver",
-                    )
-                )
-                cur = drivers[chosen]
-                st.text_input(
-                    "Tên tài xế",
-                    key=f"edit_name_{chosen}",
-                    value=cur.name,
-                )
-                st.selectbox(
-                    "Vị trí",
-                    labels,
-                    key=f"edit_node_{chosen}_{cur.node}",
-                    index=nodes.index(cur.node) if cur.node in nodes else 0,
-                    disabled=cur.status == BUSY,
-                )
-                c1, c2 = st.columns(2)
-                c1.button("Lưu thay đổi", on_click=_on_update_driver, key="btn_update_driver", width="stretch")
-                if c2.button(
-                    "Xóa tài xế",
-                    key="btn_remove_driver",
-                    type="secondary",
-                    disabled=cur.status == BUSY,
-                    width="stretch",
-                    help="Xóa tài xế khỏi danh sách nếu chưa có lịch sử chuyến",
-                ):
-                    st.session_state["show_remove_driver_dialog"] = True
-
-                if st.session_state.get("show_remove_driver_dialog"):
-                    _confirm_remove_driver_dialog(cur.id, cur.name)
-
-                st.caption("Tài xế đang bận hoặc đã có lịch sử chuyến không thể xóa.")
-        else:
-            render_empty_state(
-                "👥",
-                "Chưa có tài xế nào",
-                "Mạng lưới giao thông hiện chưa có tài xế nào được đăng ký.",
-                "Sử dụng form 'Thêm tài xế mới' bên cạnh để tạo tài xế xuất phát tại một nút giao.",
-            )
+    st.caption("💡 *Để thêm tài xế mới, sửa thông tin hoặc xóa tài xế, sử dụng mục **(2) Quản lý Tài xế** trên Bảng thao tác bên phải.*")
 
     st.divider()
     c_btn1, c_btn2 = st.columns(2)
