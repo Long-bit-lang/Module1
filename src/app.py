@@ -57,31 +57,6 @@ with st.sidebar:
         label_visibility="collapsed",
     )
 
-    st.divider()
-    st.markdown("### ⚙️ Trạng thái Hệ thống")
-    if st.session_state[session.K_MODE] == "mock":
-        st.warning("Đang chạy backend **giả lập** (mock)")
-        st.caption(st.session_state[session.K_NOTE])
-    else:
-        st.success("Backend **thật** (JsonStorage + Dispatcher)")
-
-    st.divider()
-    st.markdown("### 🎬 Trình diễn & Thuyết trình")
-    st.toggle(
-        "Bật chế độ trình diễn (Demo)",
-        key="demo_mode",
-        value=False,
-        help="Hiển thị thanh kịch bản từng bước theo luồng thuyết trình 5-7 phút ở đầu trang chính.",
-    )
-
-    st.divider()
-    st.markdown("### 📌 Ghi chú Vận hành")
-    st.info(
-        "• **Undo / Redo** được giữ an toàn qua các lần rerun tương tác, nhưng sẽ đặt lại khi F5 toàn trang.\n\n"
-        "• Khi **Hoàn thành chuyến**, lịch sử Undo/Redo sẽ được làm mới vì vị trí tài xế đã thay đổi vĩnh viễn.",
-        icon="ℹ️",
-    )
-
 # ── Header ──────────────────────────────────────────────────────────────────
 st.title("🚕 Hệ thống Điều phối Đặt xe Thông minh")
 st.caption(
@@ -141,11 +116,6 @@ with st.expander("🚀 Bắt đầu nhanh (3 bước trải nghiệm luồng ngh
         """,
         unsafe_allow_html=True,
     )
-
-# Placeholder cho thanh chế độ trình diễn (sẽ được tích hợp chi tiết ở Bước 5)
-if st.session_state.get("demo_mode"):
-    from ui.tab_dispatch import render_demo_stepper
-    render_demo_stepper()
 
 # ── Flash messages (ngay trước nội dung trang chính) ──────────────────────────
 session.render_flash()
