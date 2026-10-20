@@ -39,15 +39,7 @@ except Exception as exc:
 NAV_PAGES = ["Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán"]
 
 with st.sidebar:
-    st.markdown(
-        """
-        <div class="sidebar-brand-box">
-            <div class="sidebar-brand-title">🚕 Hệ thống Điều phối Đặt xe Thông minh</div>
-            <div class="sidebar-brand-sub">Tối ưu hóa hành trình trên đồ thị</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown("### **Hệ thống Điều phối Đặt xe Thông minh**")
     current_page = st.radio(
         "Hệ thống Điều phối Đặt xe Thông minh",
         NAV_PAGES,

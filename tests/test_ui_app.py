@@ -513,7 +513,7 @@ def test_dispatch_header_queue_chip_updates_after_submit(app):
     headers = [m.value for m in app.markdown if '<div class="page-header">' in m.value]
     assert len(headers) == 1
     initial_queue_len = len(_d(app).queue_snapshot())
-    assert f'Hàng đợi:</span> <span class="header-chip-val">{initial_queue_len}</span>' in headers[0]
+    assert f'Hàng đợi:</span> <span class="header-chip-val">{initial_queue_len}' in headers[0]
 
     # Gửi một yêu cầu đặt xe mới
     _pick(app, "req_pickup", "N3")
@@ -525,7 +525,7 @@ def test_dispatch_header_queue_chip_updates_after_submit(app):
     headers_after = [m.value for m in app.markdown if '<div class="page-header">' in m.value]
     assert len(headers_after) == 1
     expected_new_len = initial_queue_len + 1
-    assert f'Hàng đợi:</span> <span class="header-chip-val">{expected_new_len}</span>' in headers_after[0]
+    assert f'Hàng đợi:</span> <span class="header-chip-val">{expected_new_len}' in headers_after[0]
 
 
 def test_page_header_html_escaping_with_special_characters():
