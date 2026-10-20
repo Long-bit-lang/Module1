@@ -578,6 +578,67 @@ div[class*="st-key-btn_close_notif_"] button:hover {
     display: none !important;
 }
 
+/* ── 13. Thẻ Kết quả Điều phối Nổi bật (Hạng mục C) ─────────────────────── */
+.st-key-dispatch_result_card {
+    background: #EFF6FF !important;
+    border: 1px solid #BFDBFE !important;
+    border-left: 6px solid #2563EB !important;
+    border-radius: 10px !important;
+    padding: 1rem 1.25rem !important;
+    margin-bottom: 0.85rem !important;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08) !important;
+}
+.dispatch-result-header {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+}
+.dispatch-result-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1E3A8A;
+    letter-spacing: -0.01em;
+}
+.dispatch-result-strategy {
+    font-size: 0.86rem;
+    color: #475569;
+    font-weight: 500;
+}
+
+/* Thẻ Cảnh báo khi ghép thất bại (C3) */
+.st-key-dispatch_failure_card {
+    background: #FFFBEB !important;
+    border: 1px solid #FDE68A !important;
+    border-left: 6px solid #D97706 !important;
+    border-radius: 10px !important;
+    padding: 1rem 1.25rem !important;
+    margin-bottom: 0.85rem !important;
+    box-shadow: 0 2px 6px rgba(217, 119, 6, 0.08) !important;
+}
+.dispatch-failed-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #92400E;
+}
+.dispatch-failed-card {
+    margin-top: 0.4rem;
+}
+
+/* Nút ẩn kết quả */
+div[class*="st-key-btn_hide_last_result"] button {
+    background: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
+    color: #475569 !important;
+    font-size: 0.82rem !important;
+    padding: 0.25rem 0.65rem !important;
+}
+div[class*="st-key-btn_hide_last_result"] button:hover {
+    background: #F1F5F9 !important;
+    color: #0F172A !important;
+}
+
 /* Tinh chỉnh nút bấm và form ──────────────────────────────────────────────── */
 div[data-testid="stButton"] button {
     border-radius: 8px;

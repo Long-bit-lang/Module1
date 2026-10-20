@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from . import session as S
-from .components import get_status_badge_html, render_empty_state
+from .components import get_status_badge_html, render_empty_state, render_route_breadcrumb
 from .constants import ASSIGNED, FREE, status_label
 
 _REASON = {
@@ -137,15 +137,82 @@ def _queue_table(queue) -> pd.DataFrame:
 
 def _render_last_result() -> None:
     last = st.session_state.get(S.K_LAST)
-    if not last or last["result"] is None:
+    if not last:
         return
+
+    # C3: Khi ghép thất bại -> hiện thẻ cảnh báo cùng vị trí với giải thích và gợi ý
+    if last.get("failed"):
+        strategy = html.escape(str(last.get("strategy", "")))
+        reason_msg = html.escape(str(last.get("message", "Không thể điều phối chuyến.")))
+        suggestion = html.escape(str(last.get("suggestion", "Kiểm tra hàng đợi và tài xế rảnh.")))
+
+        with st.container(key="dispatch_failure_card"):
+            c_header, c_hide = st.columns([5.5, 1], vertical_alignment="center")
+            with c_header:
+                st.markdown(
+                    f"""
+                    <div class="dispatch-failed-title">
+                        ⚠️ <b>Không thể ghép chuyến ({strategy})</b>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            with c_hide:
+                if st.button("Ẩn kết quả", key="btn_hide_last_result", help="Ẩn thông báo này"):
+                    st.session_state[S.K_LAST] = None
+                    st.rerun()
+
+            st.markdown(
+                f"""
+                <div class="dispatch-failed-card">
+                    <div style="margin-bottom: 0.4rem; font-size: 0.95rem; color: #991B1B;">
+                        <b>Nguyên nhân:</b> {reason_msg}
+                    </div>
+                    <div style="font-size: 0.86rem; color: #7F1D1D; background: #FEE2E2; padding: 0.45rem 0.75rem; border-radius: 6px;">
+                        💡 <b>Gợi ý hành động:</b> {suggestion}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        return
+
+    if last.get("result") is None or not last.get("trip"):
+        return
+
+    # C1 & C2: Thẻ kết quả điều phối thành công nổi bật
     res, trip = last["result"], last["trip"]
     d = S.dispatcher()
     driver_name = d.drivers_snapshot().get(trip.driver_id)
     driver_str = f"{trip.driver_id} – {driver_name.name}" if driver_name else trip.driver_id
+    status_tag = last.get("status_tag", "Đang chạy")
 
-    with st.container(border=True):
-        st.markdown(f"**Kết quả điều phối: Chuyến {trip.id}** ({last['strategy']})")
+    badge_map = {
+        "Đã hoàn tác": "badge-busy",
+        "Chuyến đã hoàn thành": "badge-completed",
+        "Đang chạy": "badge-assigned",
+        "Đã làm lại (Redo)": "badge-assigned",
+    }
+    badge_cls = badge_map.get(status_tag, "badge-default")
+    status_badge_html = f'<span class="badge-status {badge_cls}">{html.escape(status_tag)}</span>'
+
+    with st.container(key="dispatch_result_card"):
+        c_title, c_hide = st.columns([5.5, 1], vertical_alignment="center")
+        with c_title:
+            st.markdown(
+                f"""
+                <div class="dispatch-result-header">
+                    <span class="dispatch-result-title">🚕 Đã ghép chuyến {html.escape(trip.id)} ↔ {html.escape(trip.driver_id)}</span>
+                    {status_badge_html}
+                    <span class="dispatch-result-strategy">({html.escape(last['strategy'])})</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with c_hide:
+            if st.button("Ẩn kết quả", key="btn_hide_last_result", help="Ẩn thẻ kết quả này"):
+                st.session_state[S.K_LAST] = None
+                st.rerun()
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Tài xế nhận cuốc", driver_str)
@@ -154,16 +221,10 @@ def _render_last_result() -> None:
         c4.metric("Thời gian tính toán", f"{res.runtime_ms:.3f} ms")
 
         if res.path:
-            path_str = " &nbsp;➔&nbsp; ".join(
-                f'<span class="route-node">{html.escape(S.node_label(n))}</span>' for n in res.path
-            )
-            st.markdown(
-                f"""
-                <div class="route-path">
-                    <b>Lộ trình di chuyển đón khách:</b> &nbsp; {path_str}
-                </div>
-                """,
-                unsafe_allow_html=True,
+            render_route_breadcrumb(
+                res.path,
+                S.node_label,
+                title="Lộ trình di chuyển đón khách:",
             )
 
 
