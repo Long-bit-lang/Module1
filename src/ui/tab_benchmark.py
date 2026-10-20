@@ -186,9 +186,9 @@ def render() -> None:
         title="Đối chuẩn thuật toán",
         subtitle="So sánh A1 và A2 về kết quả và hiệu năng",
         chips=[
-            ("Xe rảnh", f"{free}"),
-            ("Số đỉnh", f"{len(nodes)}"),
-            ("Số cung", f"{len(edges)}"),
+            ("**Xe rảnh**", f"{free} --- "),
+            ("**Số đỉnh**", f"{len(nodes)} --- "),
+            ("**Số cung**", f"{len(edges)} "),
         ],
     )
 
@@ -233,26 +233,26 @@ def render() -> None:
                 },
                 {
                     "Tiêu chí": "Số lần chạy Dijkstra",
-                    "A1 (Dijkstra từng tài xế)": "$k$ lần ($k$ tài xế rảnh)",
+                    "A1 (Dijkstra từng tài xế)": "k lần (k tài xế rảnh)",
                     "A2 (Dijkstra đảo chiều)": "1 lần duy nhất",
-                    "Ý nghĩa": "A2 tiết kiệm CPU khi $k$ lớn",
+                    "Ý nghĩa": "A2 tiết kiệm CPU khi k lớn",
                 },
                 {
                     "Tiêu chí": "Độ phức tạp thời gian",
-                    "A1 (Dijkstra từng tài xế)": "$O(k \\cdot (E + V \\log V))$",
-                    "A2 (Dijkstra đảo chiều)": "$O(E + V \\log V)$",
+                    "A1 (Dijkstra từng tài xế)": "O(k * (E + Vlog V))",
+                    "A2 (Dijkstra đảo chiều)": "O(E + Vlog V)",
                     "Ý nghĩa": "A2 độc lập với số tài xế",
                 },
                 {
                     "Tiêu chí": "Chi phí phụ trợ",
                     "A1 (Dijkstra từng tài xế)": "Không có",
-                    "A2 (Dijkstra đảo chiều)": "1 lần đảo chiều đồ thị $O(E)$",
+                    "A2 (Dijkstra đảo chiều)": "1 lần đảo chiều đồ thị O(E)",
                     "Ý nghĩa": "A1 lợi thế khi chỉ có 1 xe",
                 },
                 {
                     "Tiêu chí": "Khuyến nghị sử dụng",
-                    "A1 (Dijkstra từng tài xế)": "Khi $k \\le 2$ hoặc đồ thị đổi liên tục",
-                    "A2 (Dijkstra đảo chiều)": "Hệ thống thực tế ($k \\gg 1$, hàng chục/trăm xe)",
+                    "A1 (Dijkstra từng tài xế)": "Khi k <= 2 hoặc đồ thị đổi liên tục",
+                    "A2 (Dijkstra đảo chiều)": "Hệ thống thực tế (k >> 1, hàng chục/trăm xe)",
                     "Ý nghĩa": "Chuẩn mực gọi xe thông minh",
                 },
             ]

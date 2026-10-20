@@ -175,21 +175,14 @@ def render() -> None:
         title="Quản lý dữ liệu",
         subtitle="Mạng lưới giao thông và đội ngũ tài xế",
         chips=[
-            ("Số đỉnh", f"{len(nodes)}"),
-            ("Số cung", f"{len(edges)}"),
-            ("Xe rảnh", f"{free_count}"),
-            ("Xe bận", f"{busy_count}"),
+            ("**Số đỉnh**", f"{len(nodes)} --- "),
+            ("**Số cung**", f"{len(edges)} --- "),
+            ("**Xe rảnh**", f"{free_count} --- "),
+            ("**Xe bận**", f"{busy_count}"),
         ],
     )
 
-
-    # 2. Bản đồ giao thông
-    st.subheader("Bản đồ Mạng lưới Giao thông")
-    st.caption("Các đỉnh màu xanh lá có tài xế sẵn sàng nhận cuốc; màu đỏ có tài xế đang bận.")
-
-    dot_map = build_dot(edges, drivers, d.queue_snapshot(), S.node_label, nodes)
-    render_graph_with_zoom(dot_map, key_prefix="map_data", height=500)
-
+    # 1. Danh sách Tuyến đường
     with st.expander(f"📋 Danh sách Tuyến đường ({len(edges)} cung kết nối)", expanded=True):
         with st.expander("🔍 Bộ lọc", expanded=True):
             c_f1, c_f2 = st.columns([4, 1], vertical_alignment="bottom")
@@ -228,7 +221,7 @@ def render() -> None:
 
     st.divider()
 
-    # 3. Quản lý Tài xế
+    # 2. Quản lý Tài xế
     st.subheader("Quản lý Đội ngũ Tài xế")
 
     with st.expander("🔍 Bộ lọc", expanded=True):
@@ -300,3 +293,12 @@ def render() -> None:
 
     if st.session_state.get("show_reset_dialog"):
         _confirm_reset_seed_dialog()
+
+    st.divider()
+
+    # 3. Bản đồ Mạng lưới Giao thông (xuống dưới cùng)
+    st.subheader("Bản đồ Mạng lưới Giao thông")
+    st.caption("Các đỉnh màu xanh lá có tài xế sẵn sàng nhận cuốc; màu đỏ có tài xế đang bận.")
+
+    dot_map = build_dot(edges, drivers, d.queue_snapshot(), S.node_label, nodes)
+    render_graph_with_zoom(dot_map, key_prefix="map_data", height=500)

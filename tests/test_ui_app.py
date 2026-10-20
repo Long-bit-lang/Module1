@@ -561,9 +561,206 @@ def test_page_header_html_escaping_with_special_characters():
     assert '&quot;100%&quot;' in html_out
 
 
+# -----------------------------------------------------------------------------
+# Kiểm thử chức năng phát lại (Animation / Timelapse) lộ trình điều phối
+# -----------------------------------------------------------------------------
+def test_map_animation_no_trip_no_exception(app):
+    """Kiểm thử biên: chưa có chuyến nào ghép, mở bản đồ điều phối không sinh exception."""
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+    # Khi chưa có chuyến nào, các nút điều khiển animation không hiển thị hoặc không gây lỗi
+    assert not any(b.key == "anim_play" for b in app.button)
 
 
+def test_map_animation_dispatch_and_slider_scrub(app):
+    """Kiểm thử: sau khi ghép chuyến, thanh slider anim_step xuất hiện và cập nhật đúng khi tua."""
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    # Gửi yêu cầu đặt xe rồi ghép chuyến
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+
+    # Kiểm tra slider anim_step xuất hiện
+    sliders = [s for s in app.slider if s.key == "anim_step"]
+    assert len(sliders) == 1
+    slider = sliders[0]
+    assert slider.max >= 1.0
+
+    # Tua slider đến bước 1
+    app.slider(key="anim_step").set_value(1).run()
+    assert not app.exception
+    assert app.session_state["anim_step"] == 1
 
 
+def test_map_animation_play_and_auto_stop_at_end(app):
+    """Kiểm thử: nhấn Phát (anim_play) chạy từng bước và tự động dừng khi đến bước cuối cùng."""
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
 
+    # Gửi yêu cầu đặt xe rồi ghép chuyến
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+
+    # Nhấn Phát
+    app.button(key="anim_play").click().run()
+    assert not app.exception
+    assert app.session_state.get("anim_playing") is True
+
+    # Cho chạy qua các tick cho đến khi hết bước
+    max_ticks = 15
+    ticks = 0
+    while app.session_state.get("anim_playing", False) and ticks < max_ticks:
+        app.run()
+        assert not app.exception
+        ticks += 1
+
+    # Đã tự động dừng khi đến bước cuối cùng
+    assert app.session_state["anim_playing"] is False
+
+
+def test_map_animation_undo_hides_playback_controls(app):
+    """Kiểm thử xử lý biên: sau khi Undo thì ẩn nút phát (anim_play) và thông báo 'chuyến đã hoàn tác'."""
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    # Gửi yêu cầu đặt xe rồi ghép chuyến
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+    assert any(b.key == "anim_play" for b in app.button)
+
+    # Nhấn Hoàn tác (btn_undo)
+    app.button(key="btn_undo").click().run()
+    assert not app.exception
+
+    # Nút phát anim_play phải bị ẩn sau khi hoàn tác
+    assert not any(b.key == "anim_play" for b in app.button)
+
+    # Có thông báo chuyến đã hoàn tác
+    all_text = " ".join([m.value for m in app.info] + [m.value for m in app.warning] + [m.value for m in app.markdown])
+    assert "chuyến" in all_text.lower() and "hoàn tác" in all_text.lower()
+
+
+def test_build_animation_timeline_unit_contract():
+    """Kiểm thử đơn vị cho hàm build_animation_timeline: tính toán thời gian ảo, độ trễ và nét vẽ."""
+    from ui.components import build_animation_timeline
+
+    edges = [("A", "B", 4.0), ("B", "C", 6.0), ("C", "D", 2.0)]
+    def lbl(x): return f"Đỉnh {x}"
+
+    # 1. Trường hợp bình thường: chặng đón (A->B), chặng chở (B->C->D)
+    timeline = build_animation_timeline(["A", "B"], ["B", "C", "D"], edges, lbl, speed_mult=1.0)
+    assert len(timeline) == 4  # A, B, C, D
+
+    # Bước 0 (tại A): T+0, đón khách, các cạnh sắp tới đều nét đứt
+    assert timeline[0].step_index == 0
+    assert timeline[0].node == "A"
+    assert timeline[0].elapsed_time == 0.0
+    assert "0.3" <= str(timeline[0].step_delay) <= "1.2"
+    assert 0.3 <= timeline[0].step_delay <= 1.2
+    assert timeline[0].custom_edges[("A", "B")][1] == "dashed"  # sắp tới
+    assert "Bước 1/4" in timeline[0].caption
+
+    # Bước 1 (tại B): T+4, điểm đón, cạnh A->B đã đi nét liền
+    assert timeline[1].step_index == 1
+    assert timeline[1].node == "B"
+    assert timeline[1].elapsed_time == 4.0
+    assert timeline[1].custom_edges[("A", "B")][1] == "solid"
+    assert timeline[1].custom_edges[("B", "C")][1] == "dashed"
+
+    # Bước 3 (tại D): T+12 (4 + 6 + 2), tất cả cạnh đã đi nét liền
+    assert timeline[3].step_index == 3
+    assert timeline[3].node == "D"
+    assert timeline[3].elapsed_time == 12.0
+    assert timeline[3].custom_edges[("A", "B")][1] == "solid"
+    assert timeline[3].custom_edges[("B", "C")][1] == "solid"
+    assert timeline[3].custom_edges[("C", "D")][1] == "solid"
+
+    # 2. Giới hạn độ trễ [0.3, 1.2] với các tốc độ khác nhau
+    for spd in [0.5, 1.0, 2.0]:
+        t = build_animation_timeline(["A", "B", "C"], None, edges, lbl, speed_mult=spd)
+        for s in t:
+            assert 0.3 <= s.step_delay <= 1.2
+
+    # 3. Biên: 1 đỉnh
+    t_single = build_animation_timeline(["A"], None, edges, lbl)
+    assert len(t_single) == 1
+    assert t_single[0].elapsed_time == 0.0
+
+    # 4. Biên: rỗng
+    t_empty = build_animation_timeline([], None, edges, lbl)
+    assert len(t_empty) == 0
+
+
+def test_dispatch_failure_renders_without_key_error_result(app):
+    """Kiểm thử: khi ghép chuyến thất bại (ví dụ: không có tài xế rảnh),
+    thẻ cảnh báo hiển thị nguyên nhân và gợi ý, không phát sinh KeyError: 'result'.
+    """
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    # Làm tất cả tài xế bận để tạo tình huống ghép chuyến thất bại
+    d = _d(app)
+    for drv in d.drivers.values():
+        drv.status = "busy"
+
+    # Tạo yêu cầu đặt xe
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+
+    # Bấm Ghép chuyến -> Thất bại do không còn tài xế rảnh
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+
+    # Đảm bảo hiển thị đầy đủ thẻ nguyên nhân và gợi ý mà không có lỗi Exception
+    all_markdown = " ".join(m.value for m in app.markdown)
+    assert "Không thể ghép chuyến" in all_markdown
+    assert "Không còn tài xế rảnh" in all_markdown
+
+
+def test_map_positioned_at_bottom(app):
+    """Kiểm thử vị trí bản đồ luôn nằm ở dưới cùng trong tab_data và tab_dispatch."""
+    # 1. Tab Quản lý dữ liệu: "Bản đồ Mạng lưới Giao thông" nằm sau "Quản lý Đội ngũ Tài xế"
+    app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
+    assert not app.exception
+    subheaders_data = [s.value for s in app.subheader]
+    assert "Quản lý Đội ngũ Tài xế" in subheaders_data
+    assert "Bản đồ Mạng lưới Giao thông" in subheaders_data
+    idx_drivers = subheaders_data.index("Quản lý Đội ngũ Tài xế")
+    idx_data_map = subheaders_data.index("Bản đồ Mạng lưới Giao thông")
+    assert idx_data_map > idx_drivers
+
+    # 2. Tab Điều phối chuyến: "Bản đồ điều phối" nằm sau "Danh sách Chuyến xe"
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+    subheaders_dispatch = [s.value for s in app.subheader]
+    idx_trips = next(i for i, s in enumerate(subheaders_dispatch) if s.startswith("Danh sách Chuyến xe"))
+    idx_dispatch_map = subheaders_dispatch.index("Bản đồ điều phối")
+    assert idx_dispatch_map > idx_trips
+
+
+def test_benchmark_header_bold_xe_ranh_chip(app):
+    """Kiểm tra chữ 'Xe rảnh' trong chips của tab_benchmark được in đậm bằng thẻ <strong>."""
+    app.sidebar.radio(key="main_nav").set_value("Đối chuẩn thuật toán").run()
+    assert not app.exception
+    headers = [m.value for m in app.markdown if '<div class="page-header">' in m.value]
+    assert len(headers) == 1
+    assert "<strong>Xe rảnh</strong>:" in headers[0]
 

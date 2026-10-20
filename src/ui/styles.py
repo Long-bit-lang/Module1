@@ -723,6 +723,11 @@ div[data-testid="stButton"] button {
     font-weight: 500;
     color: #64748B;
 }
+.header-chip-label strong,
+.header-chip-label b {
+    font-weight: 700;
+    color: #0F172A;
+}
 .header-chip-val {
     font-weight: 700;
     color: #2563EB;
@@ -743,6 +748,44 @@ div[data-testid="stButton"] button {
     font-size: 0.75rem;
     color: #64748B;
     margin-top: 0.15rem;
+}
+/* ── 12. Phát lại lộ trình (Route Animation / Timelapse) ─────────────────── */
+.anim-box-card {
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    margin-bottom: 0.75rem;
+}
+.anim-step-badge {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    padding: 0.35rem 0.85rem;
+    font-size: 0.86rem;
+    color: #1E293B;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+    margin-bottom: 0.5rem;
+}
+.anim-step-count {
+    color: #2563EB;
+    font-weight: 700;
+}
+.anim-step-node {
+    color: #0F172A;
+    font-weight: 600;
+}
+.anim-step-time {
+    color: #047857;
+    font-weight: 600;
+}
+.anim-sep {
+    color: #94A3B8;
+    font-size: 0.8rem;
 }
 </style>
 """
