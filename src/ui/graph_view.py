@@ -43,6 +43,7 @@ def build_dot(
     custom_edges: dict[tuple[str, str], tuple[str, str, float]] | None = None,
     *,
     node_label: Callable[[str], str] | None = None,
+    driver_start_node: str | None = None,
 ) -> str:
     """routes: [(path, màu, nét)] với nét là solid hoặc dashed.
 
@@ -99,6 +100,8 @@ def build_dot(
             fill, border, pen = "#ecfdf5", "#10b981", 2.0
         if n in waiting:
             border, pen = "#f59e0b", 3.5
+        if driver_start_node and n == driver_start_node and not highlight_node:
+            fill, border, pen = "#ecfdf5", "#16a34a", 3.0
         if highlight_node and n == highlight_node:
             fill, border, pen = "#fef08a", "#2563eb", 4.0
 

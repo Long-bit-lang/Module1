@@ -229,30 +229,27 @@ def _render_map(d, queue, drivers) -> None:
     last = st.session_state.get(S.K_LAST)
     trips = d.trips_snapshot()
 
-    # 1. Xây dựng danh sách chuyến có thể phát lại (bỏ qua chuyến đã hủy)
+    # 1. Xây dựng danh sách chuyến có thể phát lại / xem lại lộ trình
     trip_options = []
     trip_map = {}
 
-    if last and last.get("trip") and not last.get("failed") and last.get("status_tag") != "Chuyến đã hủy":
+    if last and last.get("trip") and not last.get("failed"):
         last_trip = last.get("trip")
-        if last_trip and last_trip.status != CANCELLED:
-            lbl_last = f"Chuyến vừa ghép: {last_trip.id} (Xe {last_trip.driver_id} ↔ Khách {last_trip.request_id})"
-            trip_options.append(lbl_last)
-            trip_map[lbl_last] = ("last", last)
+        lbl_last = f"Chuyến vừa ghép: {last_trip.id} (Xe {last_trip.driver_id} ↔ Khách {last_trip.request_id})"
+        trip_options.append(lbl_last)
+        trip_map[lbl_last] = ("last", last_trip.id)
 
     for t in reversed(trips):
-        if t.status == CANCELLED:
-            continue
-        last_t = last.get("trip") if (last and last.get("status_tag") != "Chuyến đã hủy") else None
+        last_t = last.get("trip") if (last and not last.get("failed")) else None
         if last_t and t.id == last_t.id:
             continue
         lbl_t = f"Lịch sử: Chuyến {t.id} (Xe {t.driver_id} ↔ Khách {t.request_id})"
         trip_options.append(lbl_t)
-        trip_map[lbl_t] = ("history", t)
+        trip_map[lbl_t] = ("history", t.id)
 
-    # 4. Xác định chuyến được chọn để phát lại
+    # 4. Xác định chuyến được chọn để phát lại / xem lộ trình
     selected_type = None
-    selected_data = None
+    target_id = None
     if trip_options:
         if len(trip_options) > 1:
             sel_trip_key = st.selectbox(
@@ -260,19 +257,13 @@ def _render_map(d, queue, drivers) -> None:
                 options=trip_options,
                 index=0,
                 key="anim_trip_select",
-                help="Chọn chuyến vừa ghép (gồm chặng đón + chở) hoặc chuyến trong lịch sử (chặng chở)",
+                help="Chọn chuyến vừa ghép hoặc chuyến trong lịch sử để xem lại lộ trình hai chặng",
             )
-            selected_type, selected_data = trip_map.get(sel_trip_key, (None, None))
+            selected_type, target_id = trip_map.get(sel_trip_key, (None, None))
         else:
-            selected_type, selected_data = trip_map[trip_options[0]]
+            selected_type, target_id = trip_map[trip_options[0]]
 
     # 5. Reset bước nếu đổi chuyến phát lại
-    target_id = None
-    if selected_type == "last" and selected_data and selected_data.get("trip"):
-        target_id = selected_data["trip"].id
-    elif selected_type == "history" and selected_data:
-        target_id = selected_data.id
-
     if st.session_state.get("_anim_target_id") != target_id:
         st.session_state["_anim_target_id"] = target_id
         st.session_state["anim_step"] = 0
@@ -288,36 +279,48 @@ def _render_map(d, queue, drivers) -> None:
             st.session_state["anim_playing"] = True
             st.session_state["anim_just_played"] = True
 
-    # 7. Xây dựng lộ trình (timeline)
-    pickup_path = []
-    ride_path = []
-    route_note = "Chưa có lộ trình để hiển thị."
+    # 7. Xây dựng lộ trình dùng chung cho MỌI chuyến qua dispatcher.trip_route
+    pickup_path: list[str] = []
+    ride_path: list[str] = []
+    pickup_eta: float = 0.0
+    ride_eta: float | None = None
+    pickup_known: bool = True
+    route_note: str = "Chưa có lộ trình để hiển thị."
+    route_info: dict | None = None
 
-    if selected_type == "last" and selected_data:
-        res = selected_data.get("result")
-        if res and res.path:
-            pickup_path = list(res.path)
-        last_t = selected_data.get("trip")
-        req_id = last_t.request_id if last_t else None
-        est = d.ride_estimate(req_id) if (req_id and hasattr(d, "ride_estimate")) else None
-        if est and est[1]:
-            ride_path = list(est[1])
-            route_note = (
-                f"Xanh lá: xe đến điểm đón ({res.eta:g} phút). "
-                f"Cam: chở khách đến điểm trả ({est[0]:g} phút)."
-            ) if res else "Lộ trình chuyến vừa ghép."
+    selected_trip = None
+    if target_id:
+        selected_trip = next((t for t in trips if t.id == target_id), None)
+        if selected_trip is None and last and last.get("trip") and last["trip"].id == target_id:
+            selected_trip = last["trip"]
+
+    is_cancelled = False
+    if selected_trip and selected_trip.status == CANCELLED:
+        is_cancelled = True
+    elif last and last.get("trip") and last["trip"].id == target_id and last.get("status_tag") == "Chuyến đã hủy":
+        is_cancelled = True
+
+    if target_id:
+        if hasattr(d, "trip_route"):
+            route_info = d.trip_route(target_id)
+        if route_info is not None:
+            pickup_path = list(route_info.get("pickup_path") or [])
+            ride_path = list(route_info.get("ride_path") or [])
+            pickup_eta = float(route_info.get("pickup_eta", 0.0))
+            ride_eta = route_info.get("ride_eta")
+            pickup_known = bool(route_info.get("pickup_known", True))
+
+            notes = []
+            if pickup_path:
+                notes.append(f"Xanh lá: xe đến điểm đón ({pickup_eta:g} phút)")
+            if ride_path:
+                if ride_eta is not None:
+                    notes.append(f"Cam nét đứt: chở khách đến điểm trả ({ride_eta:g} phút)")
+                else:
+                    notes.append("Cam nét đứt: chở khách đến điểm trả")
+            route_note = ". ".join(notes) + ("." if notes else "")
         else:
-            route_note = f"Xanh lá: xe đến điểm đón ({res.eta:g} phút)." if res else "Lộ trình chuyến vừa ghép."
-    elif selected_type == "history":
-        est = d.ride_estimate(selected_data.request_id) if hasattr(d, "ride_estimate") else None
-        if est and est[1]:
-            ride_path = list(est[1])
-            route_note = (
-                f"Lịch sử chuyến {selected_data.id}: chỉ phát lại chặng chở khách "
-                f"({est[0]:g} phút) vì Trip hiện chưa lưu điểm xuất phát của tài xế."
-            )
-        else:
-            route_note = "Lịch sử chuyến: không tìm thấy lộ trình."
+            route_note = f"Không tìm thấy dữ liệu lộ trình cho chuyến {target_id}."
     elif queue:
         free = {x.id: x.node for x in drivers.values() if x.status == FREE}
         name = st.session_state.get("strategy_name") or next(iter(S.strategies()))
@@ -329,45 +332,55 @@ def _render_map(d, queue, drivers) -> None:
                     f"{preview_res.driver_id} nhận, ETA {preview_res.eta:g} phút."
                 )
 
+    routes: list[tuple[list[str], str, str]] = []
+    if pickup_path:
+        routes.append((pickup_path, "#16a34a", "solid"))
+    if ride_path:
+        routes.append((ride_path, "#ea580c", "dashed"))
+    driver_start_node = pickup_path[0] if pickup_path else None
+
     speed_label = st.session_state.get("anim_speed", "2x")
     speed_mult = {"1x": 1.0, "2x": 2.0, "4x": 4.0}.get(speed_label, 2.0)
     avg_render_time = st.session_state.get("anim_avg_render_time", 0.0)
 
-    # Tiền kết xuất và lưu cache chuỗi DOT cho từng tick (YÊU CẦU 3.a)
-    route_signature = f"{target_id}_p{len(pickup_path)}_r{len(ride_path)}_{','.join(pickup_path)}_{','.join(ride_path)}_{speed_label}"
-    drivers_sig = f"{len(drivers)}_{sum(1 for drv in drivers.values() if drv.status == FREE)}"
-    timeline_cache_key = f"{route_signature}_{drivers_sig}"
-
-    if (
-        st.session_state.get("_anim_timeline_cache_key") != timeline_cache_key
-        or "_anim_cached_timeline" not in st.session_state
-    ):
-        import time
-        _t0 = time.perf_counter()
-        timeline = build_animation_ticks(
-            pickup_path=pickup_path,
-            ride_path=ride_path,
-            graph_edges=d.graph.edges(),
-            node_label_fn=S.node_label,
-            speed_mult=speed_mult,
-            drivers=drivers,
-            queue=queue,
-            nodes=d.graph.nodes(),
-            precompute_dots=True,
-            avg_render_time=avg_render_time,
-        )
-        _render_cost = time.perf_counter() - _t0
-        st.session_state["_anim_cached_timeline"] = timeline
-        st.session_state["_anim_timeline_cache_key"] = timeline_cache_key
-        st.session_state["_anim_last_render_cost"] = _render_cost
-
-        # Lưu thời gian render trung bình đo được vào session_state (YÊU CẦU 5)
-        measured_render = getattr(timeline, "avg_render_time", 0.0) or getattr(timeline, "_avg_render_time", 0.0)
-        if measured_render > 0:
-            st.session_state["anim_avg_render_time"] = measured_render
-            st.session_state["anim_render_time"] = measured_render
+    # Tiền kết xuất và lưu cache chuỗi DOT cho từng tick
+    if is_cancelled:
+        timeline = []
     else:
-        timeline = st.session_state["_anim_cached_timeline"]
+        route_signature = f"{target_id}_p{len(pickup_path)}_r{len(ride_path)}_{','.join(pickup_path)}_{','.join(ride_path)}_{speed_label}"
+        drivers_sig = f"{len(drivers)}_{sum(1 for drv in drivers.values() if drv.status == FREE)}"
+        timeline_cache_key = f"{route_signature}_{drivers_sig}"
+
+        if (
+            st.session_state.get("_anim_timeline_cache_key") != timeline_cache_key
+            or "_anim_cached_timeline" not in st.session_state
+        ):
+            import time
+            _t0 = time.perf_counter()
+            timeline = build_animation_ticks(
+                pickup_path=pickup_path,
+                ride_path=ride_path,
+                graph_edges=d.graph.edges(),
+                node_label_fn=S.node_label,
+                speed_mult=speed_mult,
+                drivers=drivers,
+                queue=queue,
+                nodes=d.graph.nodes(),
+                precompute_dots=True,
+                avg_render_time=avg_render_time,
+            )
+            _render_cost = time.perf_counter() - _t0
+            st.session_state["_anim_cached_timeline"] = timeline
+            st.session_state["_anim_timeline_cache_key"] = timeline_cache_key
+            st.session_state["_anim_last_render_cost"] = _render_cost
+
+            # Lưu thời gian render trung bình đo được vào session_state (YÊU CẦU 5)
+            measured_render = getattr(timeline, "avg_render_time", 0.0) or getattr(timeline, "_avg_render_time", 0.0)
+            if measured_render > 0:
+                st.session_state["anim_avg_render_time"] = measured_render
+                st.session_state["anim_render_time"] = measured_render
+        else:
+            timeline = st.session_state["_anim_cached_timeline"]
 
     total_ticks = timeline[-1].total_ticks if timeline else 0
     total_frames = len(timeline)
@@ -562,33 +575,39 @@ def _render_map(d, queue, drivers) -> None:
                 queue=queue,
                 label=S.node_label,
                 nodes=d.graph.nodes(),
-                routes=None,
+                routes=routes,
                 layout="neato",
                 highlight_node=current_tick_info.node,
                 custom_edges=current_tick_info.custom_edges,
+                driver_start_node=driver_start_node,
             )
         else:
-            # Chế độ bản đồ tĩnh cơ bản (xem trước hoặc khi chưa có chuyến)
-            preview_routes = []
-            if queue:
+            # Chế độ bản đồ tĩnh (xem lộ trình chuyến đã hủy hoặc chưa có chuyến/xem trước)
+            static_routes = list(routes)
+            if not static_routes and queue:
                 free = {x.id: x.node for x in drivers.values() if x.status == FREE}
                 name = st.session_state.get("strategy_name") or next(iter(S.strategies()))
                 if free:
                     res_prev = S.strategies()[name].find_driver(d.graph, queue[0].pickup_node, free)
                     if res_prev.path:
-                        preview_routes.append((res_prev.path, "#2563eb", "dashed"))
+                        static_routes.append((res_prev.path, "#2563eb", "dashed"))
             dot_dispatch = build_dot(
                 edges=d.graph.edges(),
                 drivers=drivers,
                 queue=queue,
                 label=S.node_label,
                 nodes=d.graph.nodes(),
-                routes=preview_routes,
+                routes=static_routes,
                 layout="neato",
+                driver_start_node=driver_start_node,
             )
 
         render_graph_with_zoom(dot_dispatch, key_prefix="map_dispatch", height=500)
         st.caption(route_note + "  Viền cam: điểm đón đang chờ.")
+        if target_id and route_info is None:
+            st.info(f"Không tìm thấy lộ trình cho chuyến {target_id}.")
+        elif route_info is not None and not pickup_known:
+            st.info("Chuyến này được tạo trước khi hệ thống lưu lộ trình đón nên chỉ hiển thị chặng chở khách.")
 
     _map_animation_fragment()
 

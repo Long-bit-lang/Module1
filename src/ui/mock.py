@@ -6,7 +6,7 @@ trường RIDE_DISPATCH_BACKEND=mock). KHÔNG phải nơi chứa logic nghiệp 
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from core.road_graph import RoadGraph
 from core.strategies import STRATEGIES, MatchResult, shortest_path
@@ -37,6 +37,13 @@ class MockTrip:
     driver_id: str
     eta: float
     status: str = ASSIGNED
+    pickup_path: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.pickup_path is None:
+            self.pickup_path = []
+        else:
+            self.pickup_path = list(self.pickup_path)
 
 
 # ----------------------------------------------------------------- bộ điều phối giả
@@ -125,7 +132,8 @@ class FakeDispatcher:
         self.queue.pop(0)
         req.status = ASSIGNED
         self.drivers[res.driver_id].status = BUSY
-        trip = MockTrip(self._new_id("T"), req.id, res.driver_id, res.eta)
+        path_list = list(res.path) if res.path else []
+        trip = MockTrip(self._new_id("T"), req.id, res.driver_id, res.eta, pickup_path=path_list)
         self.trips.append(trip)
         return trip
 
@@ -134,6 +142,43 @@ class FakeDispatcher:
         while (trip := self.dispatch_next(strategy)) is not None:
             trips.append(trip)
         return trips
+
+    def trip_route(self, trip_id: str) -> dict | None:
+        trip = next((t for t in self.trips if t.id == trip_id), None)
+        if trip is None:
+            return None
+        req = self.all_requests.get(trip.request_id)
+        if req is None:
+            return None
+
+        ride_eta, ride_path, _ = shortest_path(self.graph, req.pickup_node, req.dropoff_node)
+        if ride_eta is None:
+            ride_path = []
+            ride_eta = None
+
+        if trip.pickup_path:
+            pickup_path = list(trip.pickup_path)
+            pickup_known = True
+        elif trip.status == ASSIGNED:
+            drv = self.drivers.get(trip.driver_id)
+            if drv is not None:
+                p_eta, p_path, _ = shortest_path(self.graph, drv.node, req.pickup_node)
+                pickup_path = p_path if p_path is not None else []
+                pickup_known = True
+            else:
+                pickup_path = []
+                pickup_known = False
+        else:
+            pickup_path = []
+            pickup_known = False
+
+        return {
+            "pickup_path": pickup_path,
+            "ride_path": ride_path,
+            "pickup_eta": float(trip.eta),
+            "ride_eta": ride_eta,
+            "pickup_known": pickup_known,
+        }
 
     def cancel_request(self, request_id: str) -> bool:
         req = self.all_requests.get(request_id)

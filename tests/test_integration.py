@@ -136,3 +136,51 @@ def test_remove_driver_with_trip_history_raises_error(tmp_path: Path):
 
     with pytest.raises(ValueError):
         dispatcher.remove_driver("D3")
+
+
+def test_seed_dispatch_complete_save_reload_trip_route_two_legs(tmp_path: Path):
+    """Kịch bản: seed -> dispatch R3 bằng A1 -> complete -> save -> reload:
+    - trip_route(T3) có pickup_path kết thúc ở N4 và ride_path nối N4 -> N6
+    - trip_route('T1') (seed COMPLETED) có pickup_known=False
+    - trip_route('T2') (seed ASSIGNED) có pickup_known=True suy ra từ vị trí tài xế
+    """
+    storage = JsonStorage(runtime_dir=tmp_path)
+    dispatcher = Dispatcher.from_state(storage.load_all())
+
+    # 1. Điều phối R3 bằng A1
+    t3 = dispatcher.dispatch_next(DijkstraPerDriver())
+    assert t3 is not None
+    assert t3.id == "T3"
+    assert t3.request_id == "R3"
+
+    # 2. Hoàn thành chuyến T3
+    assert dispatcher.complete_trip("T3") is True
+
+    # 3. Lưu và nạp lại từ runtime
+    storage.save_all(dispatcher.export_state())
+    reloaded = Dispatcher.from_state(storage.load_all())
+
+    # 4. Kiểm tra trip_route(T3) sau khi nạp lại
+    route_t3 = reloaded.trip_route("T3")
+    assert route_t3 is not None
+    assert route_t3["pickup_known"] is True
+    assert len(route_t3["pickup_path"]) >= 2
+    assert route_t3["pickup_path"][-1] == "N4"
+    assert route_t3["ride_path"][0] == "N4"
+    assert route_t3["ride_path"][-1] == "N6"
+    assert route_t3["pickup_eta"] == 6.0
+    assert route_t3["ride_eta"] is not None
+
+    # 5. Kiểm tra trip_route('T1') (seed đã hoàn thành, không lưu pickup_path ban đầu)
+    route_t1 = reloaded.trip_route("T1")
+    assert route_t1 is not None
+    assert route_t1["pickup_known"] is False
+    assert route_t1["pickup_path"] == []
+    assert len(route_t1["ride_path"]) >= 2
+
+    # 6. Kiểm tra trip_route('T2') (seed ASSIGNED, suy ra từ vị trí tài xế)
+    route_t2 = reloaded.trip_route("T2")
+    assert route_t2 is not None
+    assert route_t2["pickup_known"] is True
+    assert len(route_t2["pickup_path"]) >= 2
+    assert route_t2["pickup_path"][-1] == reloaded.all_requests["R2"].pickup_node

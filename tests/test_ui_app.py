@@ -1029,3 +1029,124 @@ def test_benchmark_header_bold_xe_ranh_chip(app):
     assert len(headers) == 1
     assert "<strong>Xe rảnh</strong>:" in headers[0]
 
+
+# =====================================================================
+# 10. KIỂM THỬ XEM LẠI LỘ TRÌNH ĐỦ HAI CHẶNG TRONG LỊCH SỬ (PICKUP_PATH)
+# =====================================================================
+
+
+def test_ui_history_trip_renders_both_legs_after_completion(app):
+    """UI AppTest (mock):
+    - Ghép chuyến mới -> hoàn thành chuyến.
+    - Chọn xem lại chuyến đó trong lịch sử: bản đồ dùng đủ 2 chặng:
+      + Chặng đón: màu xanh lá #16a34a, nét solid.
+      + Chặng chở: màu cam #ea580c, nét dashed.
+    - Kiểm tra qua chuỗi DOT trong proto.spec của graphviz_chart.
+    - F5/rerun không làm mất chặng xanh.
+    """
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    # Gửi yêu cầu đặt xe N3 -> N7
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+
+    # Ghép chuyến
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+    trip = _d(app).trips_snapshot()[0]
+
+    # Hoàn thành chuyến
+    app.button(key=f"btn_complete_{trip.id}").click().run()
+    assert not app.exception
+    completed_trip = _d(app).trips_snapshot()[0]
+    assert completed_trip.status == "completed"
+
+    # Chọn chuyến trong selectbox lịch sử (nếu có selectbox)
+    selectboxes = [s for s in app.selectbox if s.key == "anim_trip_select"]
+    if selectboxes:
+        opt = next(o for o in selectboxes[0].options if trip.id in o)
+        selectboxes[0].select(opt).run()
+        assert not app.exception
+
+    # Kiểm tra chuỗi DOT được truyền vào st.graphviz_chart
+    charts = app.get("graphviz_chart")
+    assert len(charts) > 0
+    dot_spec = charts[-1].proto.spec
+
+    # Kiểm tra đủ 2 chặng trong DOT: chặng xanh lá (#16a34a) và chặng cam (#ea580c)
+    assert "#16a34a" in dot_spec, "Lộ trình đón (xanh lá) phải xuất hiện trong DOT"
+    assert "#ea580c" in dot_spec, "Lộ trình chở khách (cam) phải xuất hiện trong DOT"
+    assert "solid" in dot_spec
+    assert "dashed" in dot_spec
+
+    # Chú giải dưới bản đồ có thông tin cả 2 chặng kèm ETA
+    captions = [c.value for c in app.caption]
+    assert any("Xanh lá: xe đến điểm đón" in c and "Cam nét đứt: chở khách đến điểm trả" in c for c in captions)
+
+    # F5 / rerun lại ứng dụng: không làm mất chặng xanh
+    app.run()
+    assert not app.exception
+    reloaded_charts = app.get("graphviz_chart")
+    reloaded_dot = reloaded_charts[-1].proto.spec
+    assert "#16a34a" in reloaded_dot
+    assert "#ea580c" in reloaded_dot
+
+
+def test_ui_seed_t1_history_shows_legacy_info_message(real_app, tmp_path):
+    """UI AppTest (real backend):
+    - Chọn chuyến seed T1 (COMPLETED, không có pickup_path).
+    - Hiển thị st.info: 'Chuyến này được tạo trước khi hệ thống lưu lộ trình đón nên chỉ hiển thị chặng chở khách.'
+    - Không phát sinh exception.
+    - Bản đồ hiển thị chặng cam (chở khách), không có chặng xanh.
+    """
+    real_app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not real_app.exception
+
+    # Chọn chuyến seed T1
+    selectboxes = [s for s in real_app.selectbox if s.key == "anim_trip_select"]
+    assert len(selectboxes) > 0
+    t1_opt = next(o for o in selectboxes[0].options if "T1" in o)
+    selectboxes[0].select(t1_opt).run()
+    assert not real_app.exception
+
+    # Kiểm tra banner st.info giải thích dữ liệu cũ
+    infos = [i.value for i in real_app.info]
+    assert any("Chuyến này được tạo trước khi hệ thống lưu lộ trình đón nên chỉ hiển thị chặng chở khách." in i for i in infos)
+
+    # Kiểm tra DOT: có chặng cam (#ea580c), không có chặng xanh đón (#16a34a)
+    charts = real_app.get("graphviz_chart")
+    assert len(charts) > 0
+    dot_spec = charts[-1].proto.spec
+    assert "#ea580c" in dot_spec
+    assert "#16a34a" not in dot_spec
+
+
+def test_ui_seed_t2_assigned_shows_both_legs(real_app, tmp_path):
+    """UI AppTest (real backend):
+    - Chuyến seed T2 (ASSIGNED) hiển thị đủ hai chặng nhờ suy ra từ vị trí tài xế.
+    - Không hiện banner st.info dữ liệu cũ.
+    """
+    real_app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not real_app.exception
+
+    # Chọn chuyến seed T2
+    selectboxes = [s for s in real_app.selectbox if s.key == "anim_trip_select"]
+    assert len(selectboxes) > 0
+    t2_opt = next(o for o in selectboxes[0].options if "T2" in o)
+    selectboxes[0].select(t2_opt).run()
+    assert not real_app.exception
+
+    # Kiểm tra DOT có cả 2 chặng
+    charts = real_app.get("graphviz_chart")
+    assert len(charts) > 0
+    dot_spec = charts[-1].proto.spec
+    assert "#16a34a" in dot_spec
+    assert "#ea580c" in dot_spec
+
+    # Không hiện banner dữ liệu cũ
+    infos = [i.value for i in real_app.info]
+    assert not any("Chuyến này được tạo trước khi hệ thống lưu lộ trình đón" in i for i in infos)
+

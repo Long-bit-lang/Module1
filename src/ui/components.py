@@ -499,6 +499,13 @@ def build_animation_ticks(
     num_ride_edges = max(0, len(r_path) - 1) if r_path else 0
     has_both_phases = (num_pickup_edges > 0 and num_ride_edges > 0)
 
+    active_routes: list[tuple[list[str], str, str]] = []
+    if p_path:
+        active_routes.append((p_path, "#16a34a", "solid"))
+    if r_path:
+        active_routes.append((r_path, "#ea580c", "dashed"))
+    start_driver_node = p_path[0] if p_path else None
+
     route_edges: list[tuple[str, str]] = []
     for k_edge in range(len(full_nodes) - 1):
         route_edges.append((full_nodes[k_edge], full_nodes[k_edge + 1]))
@@ -535,10 +542,11 @@ def build_animation_ticks(
                 queue=queue or [],
                 label=node_label_fn,
                 nodes=nodes,
-                routes=None,
+                routes=active_routes,
                 layout="neato",
                 highlight_node=single_node,
                 custom_edges={},
+                driver_start_node=start_driver_node,
             )
             render_cost = time.perf_counter() - t_render_start
             return AnimationTimeline([single_tick], avg_render_time=render_cost)
@@ -577,8 +585,9 @@ def build_animation_ticks(
     init_custom_edges: dict[tuple[str, str], tuple[str, str, float]] = {}
     for idx, edge in enumerate(route_edges):
         is_pickup = idx < num_pickup_edges
-        color = "#86efac" if is_pickup else "#fdba74"
-        init_custom_edges[edge] = (color, "dashed", 2.0)
+        color = "#16a34a" if is_pickup else "#ea580c"
+        style = "solid" if is_pickup else "dashed"
+        init_custom_edges[edge] = (color, style, 3.5)
 
     phase_0_prefix = "Chặng 1/2" if has_both_phases else ("Chặng 1/1" if (num_pickup_edges > 0 or num_ride_edges > 0) else "")
     caption_0 = f"{phase_0_prefix} • Xuất phát tại {first_lbl} • 0% • T+0.0 phút" if phase_0_prefix else f"Xuất phát tại {first_lbl} • 0% • T+0.0 phút"
@@ -708,10 +717,11 @@ def build_animation_ticks(
                 queue=queue or [],
                 label=node_label_fn,
                 nodes=nodes,
-                routes=None,
+                routes=active_routes,
                 layout="neato",
                 highlight_node=t.node,
                 custom_edges=t.custom_edges,
+                driver_start_node=start_driver_node,
             )
         t_render_total = time.perf_counter() - t_render_start
         avg_measured_render = t_render_total / max(1, len(final_ticks))
