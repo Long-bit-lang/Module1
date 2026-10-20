@@ -146,6 +146,7 @@ Khớp phần tử trong mảng `drivers` của `drivers.json`.
 |---------|---------|---------|
 | `QUEUED` | `"queued"` | Yêu cầu đang chờ trong hàng đợi FIFO |
 | `ASSIGNED` | `"assigned"` | Yêu cầu đã được gán tài xế |
+| `CANCELLED` | `"cancelled"` | Yêu cầu đã bị hủy (sau khi hủy chuyến ASSIGNED) |
 
 ### Thuộc tính
 
@@ -154,7 +155,7 @@ Khớp phần tử trong mảng `drivers` của `drivers.json`.
 | `id` | `str` | — | Mã yêu cầu (ví dụ: `"R1"`) |
 | `pickup_node` | `str` | — | Mã đỉnh điểm đón hành khách |
 | `dropoff_node` | `str` | — | Mã đỉnh điểm trả hành khách |
-| `status` | `str` | `QUEUED` | Trạng thái — chỉ nhận `QUEUED` hoặc `ASSIGNED` |
+| `status` | `str` | `QUEUED` | Trạng thái — nhận `QUEUED`, `ASSIGNED` hoặc `CANCELLED` |
 
 ### Sơ đồ chuyển trạng thái
 
@@ -162,17 +163,21 @@ Khớp phần tử trong mảng `drivers` của `drivers.json`.
                submit_request()
                      │
                      ▼
-          ┌──────► QUEUED ──────────────┐
-          │          │                  │
-   undo() │          │ dispatch_next()  │ cancel_request()
-          │          ▼                  ▼
-          └────── ASSIGNED          [Hủy / Đã xóa]
+                 QUEUED ───────────────────────┐
+                    │                          │
+                    │ dispatch_next()          │ cancel_request()
+                    ▼                          ▼
+                 ASSIGNED                  [Đã hủy / xóa khỏi queue]
+                    │
+                    │ cancel_trip()
+                    ▼
+                CANCELLED (không quay lại hàng đợi)
 ```
 
 - **Khởi tạo**: Yêu cầu được tạo với trạng thái `QUEUED` và đưa vào hàng đợi FIFO.
 - **Ghép chuyến (`dispatch_next`)**: Chuyển từ `QUEUED` sang `ASSIGNED` khi tìm được tài xế phù hợp.
-- **Hoàn tác (`undo`)**: Đưa yêu cầu từ `ASSIGNED` trở về `QUEUED` và đặt lại đầu hàng đợi FIFO.
-- **Hủy yêu cầu (`cancel_request`)**: Hủy và xóa hoàn toàn yêu cầu khỏi hàng đợi và hệ thống khi vẫn đang ở `QUEUED`.
+- **Hủy chuyến (`cancel_trip`)**: Khi chuyến xe `ASSIGNED` bị hủy, yêu cầu chuyển sang `CANCELLED` và KHÔNG quay lại hàng đợi.
+- **Hủy yêu cầu (`cancel_request`)**: Hủy và xóa yêu cầu khỏi hàng đợi khi vẫn đang ở `QUEUED`.
 
 ### Schema `to_dict()`
 
@@ -190,7 +195,7 @@ Khớp phần tử trong mảng `requests` của `requests.json`.
 | `pickup_node` | Không rỗng | `ValueError` |
 | `dropoff_node` | Không rỗng | `ValueError` |
 | `pickup_node` vs `dropoff_node` | Phải khác nhau | `ValueError` |
-| `status` khi khởi tạo | Phải là `QUEUED` hoặc `ASSIGNED` | `ValueError` |
+| `status` khi khởi tạo | Phải là `QUEUED`, `ASSIGNED` hoặc `CANCELLED` | `ValueError` |
 
 ---
 
@@ -204,6 +209,7 @@ Khớp phần tử trong mảng `requests` của `requests.json`.
 |---------|---------|---------|
 | `ASSIGNED` | `"assigned"` | Chuyến đã gán tài xế, đang thực hiện |
 | `COMPLETED` | `"completed"` | Chuyến đã hoàn thành |
+| `CANCELLED` | `"cancelled"` | Chuyến đã bị hủy bởi người điều phối |
 
 ### Thuộc tính
 
@@ -213,13 +219,16 @@ Khớp phần tử trong mảng `requests` của `requests.json`.
 | `request_id` | `str` | — | Mã yêu cầu đặt xe tương ứng |
 | `driver_id` | `str` | — | Mã tài xế được gán |
 | `eta` | `float` | — | Thời gian dự kiến đón (phút, số thực hữu hạn ≥ 0) |
-| `status` | `str` | `ASSIGNED` | Trạng thái — chỉ nhận `ASSIGNED` hoặc `COMPLETED` |
+| `status` | `str` | `ASSIGNED` | Trạng thái — nhận `ASSIGNED`, `COMPLETED` hoặc `CANCELLED` |
 
 ### Sơ đồ chuyển trạng thái
 
 ```
-ASSIGNED ──► COMPLETED
-     (do Dispatcher.complete_trip())
+       ┌──► COMPLETED  (do Dispatcher.complete_trip())
+       │
+ASSIGNED
+       │
+       └──► CANCELLED  (do Dispatcher.cancel_trip())
 ```
 
 ### Schema `to_dict()`
@@ -238,7 +247,7 @@ Khớp phần tử trong mảng `trips` của `trips.json`.
 | `request_id` | Không rỗng | `ValueError` |
 | `driver_id` | Không rỗng | `ValueError` |
 | `eta` | Phải là số thực hữu hạn ≥ 0 (`math.isfinite(eta)`, không nhận `bool`, `inf`, `nan`) | `ValueError` |
-| `status` khi khởi tạo | Phải là `ASSIGNED` hoặc `COMPLETED` | `ValueError` |
+| `status` khi khởi tạo | Phải là `ASSIGNED`, `COMPLETED` hoặc `CANCELLED` | `ValueError` |
 
 ---
 
@@ -247,7 +256,7 @@ Khớp phần tử trong mảng `trips` của `trips.json`.
 Export từ `src/models/__init__.py`, dùng chung toàn dự án:
 
 ```python
-from models import FREE, BUSY, QUEUED, ASSIGNED, COMPLETED
+from models import FREE, BUSY, QUEUED, ASSIGNED, COMPLETED, CANCELLED
 ```
 
 | Hằng số | Giá trị | Thuộc lớp |
@@ -257,6 +266,7 @@ from models import FREE, BUSY, QUEUED, ASSIGNED, COMPLETED
 | `QUEUED` | `"queued"` | `RideRequest` |
 | `ASSIGNED` | `"assigned"` | `RideRequest`, `Trip` |
 | `COMPLETED` | `"completed"` | `Trip` |
+| `CANCELLED` | `"cancelled"` | `RideRequest`, `Trip` |
 
 > ⚠️ **Quy tắc bắt buộc**: Tuyệt đối không hardcode chuỗi trạng thái (`"free"`, `"busy"`, ...) ở bất kỳ module nào trong dự án. Luôn import và dùng hằng số từ `models`.
 

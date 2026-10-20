@@ -1,8 +1,8 @@
 from typing import Any
 from .base_entity import BaseEntity
-from .constants import ASSIGNED, QUEUED
+from .constants import ASSIGNED, QUEUED, CANCELLED
 
-_VALID_STATUSES = {QUEUED, ASSIGNED}
+_VALID_STATUSES = {QUEUED, ASSIGNED, CANCELLED}
 
 
 class RideRequest(BaseEntity):
@@ -21,7 +21,7 @@ class RideRequest(BaseEntity):
         if pickup_node == dropoff_node:
             raise ValueError("pickup_node và dropoff_node không được trùng nhau")
         if status not in _VALID_STATUSES:
-            raise ValueError(f"status phải là {QUEUED!r} hoặc {ASSIGNED!r}, nhận: {status!r}")
+            raise ValueError(f"status phải là {QUEUED!r}, {ASSIGNED!r} hoặc {CANCELLED!r}, nhận: {status!r}")
         self.pickup_node = pickup_node
         self.dropoff_node = dropoff_node
         self.status = status

@@ -1,9 +1,9 @@
 import math
 from typing import Any
 from .base_entity import BaseEntity
-from .constants import ASSIGNED, COMPLETED
+from .constants import ASSIGNED, COMPLETED, CANCELLED
 
-_VALID_STATUSES = {ASSIGNED, COMPLETED}
+_VALID_STATUSES = {ASSIGNED, COMPLETED, CANCELLED}
 
 
 class Trip(BaseEntity):
@@ -23,7 +23,7 @@ class Trip(BaseEntity):
         if isinstance(eta, bool) or not isinstance(eta, (int, float)) or not math.isfinite(eta) or eta < 0:
             raise ValueError(f"eta phải là số hữu hạn >= 0, nhận: {eta}")
         if status not in _VALID_STATUSES:
-            raise ValueError(f"status phải là {ASSIGNED!r} hoặc {COMPLETED!r}, nhận: {status!r}")
+            raise ValueError(f"status phải là {ASSIGNED!r}, {COMPLETED!r} hoặc {CANCELLED!r}, nhận: {status!r}")
         self.request_id = request_id
         self.driver_id = driver_id
         self.eta = float(eta)

@@ -14,7 +14,7 @@ from models import (
     Location,
     Driver, FREE, BUSY,
     RideRequest, QUEUED,
-    Trip, ASSIGNED, COMPLETED,
+    Trip, ASSIGNED, COMPLETED, CANCELLED,
 )
 
 
@@ -214,6 +214,16 @@ class TestRideRequest:
         assert restored.dropoff_node == request_.dropoff_node
         assert restored.status == request_.status
 
+    def test_T23b_valid_status_cancelled(self):
+        """T23b: RideRequest chấp nhận status CANCELLED và roundtrip to_dict/from_dict chuẩn xác."""
+        req = RideRequest("R99", "N2", "N5", status=CANCELLED)
+        assert req.status == CANCELLED
+        d = req.to_dict()
+        assert d["status"] == "cancelled"
+        restored = RideRequest.from_dict(d)
+        assert restored == req
+        assert restored.status == CANCELLED
+
 
 # ---------------------------------------------------------------------------
 # T24–T27  Trip
@@ -234,6 +244,16 @@ class TestTrip:
         """T26: status không hợp lệ → ValueError."""
         with pytest.raises(ValueError):
             Trip("T1", "R1", "D1", 5.0, status="ongoing")
+
+    def test_T26b_valid_status_cancelled(self):
+        """T26b: Trip chấp nhận status CANCELLED và roundtrip to_dict/from_dict chuẩn xác."""
+        t = Trip("T99", "R99", "D1", 5.5, status=CANCELLED)
+        assert t.status == CANCELLED
+        d = t.to_dict()
+        assert d["status"] == "cancelled"
+        restored = Trip.from_dict(d)
+        assert restored == t
+        assert restored.status == CANCELLED
 
     def test_T27_to_dict_and_from_dict_roundtrip(self, trip):
         """T27: to_dict → from_dict cho object bằng gốc."""
@@ -274,7 +294,7 @@ class TestConstants:
     def test_T28a_all_constants_importable(self):
         """T28a: Tất cả hằng số và class thực thể được export đầy đủ từ models."""
         import models
-        required_constants = ["FREE", "BUSY", "QUEUED", "ASSIGNED", "COMPLETED"]
+        required_constants = ["FREE", "BUSY", "QUEUED", "ASSIGNED", "COMPLETED", "CANCELLED"]
         required_classes = ["BaseEntity", "Location", "Driver", "RideRequest", "Trip"]
         for name in required_constants + required_classes:
             assert hasattr(models, name), f"models thiếu export: {name}"
@@ -290,6 +310,7 @@ class TestConstants:
         assert QUEUED == "queued"
         assert ASSIGNED == "assigned"
         assert COMPLETED == "completed"
+        assert CANCELLED == "cancelled"
 
     def test_T28c_no_core_import_in_models(self):
         """T28c: models không import từ core hay streamlit."""
