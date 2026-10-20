@@ -175,9 +175,9 @@ def render() -> None:
         title="Quản lý dữ liệu",
         subtitle="Mạng lưới giao thông và đội ngũ tài xế",
         chips=[
-            ("**Số đỉnh**", f"{len(nodes)} --- "),
-            ("**Số cung**", f"{len(edges)} --- "),
-            ("**Xe rảnh**", f"{free_count} --- "),
+            ("**Số đỉnh**", f"{len(nodes)}"),
+            ("**Số cung**", f"{len(edges)}"),
+            ("**Xe rảnh**", f"{free_count}"),
             ("**Xe bận**", f"{busy_count}"),
         ],
     )

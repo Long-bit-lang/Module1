@@ -599,7 +599,7 @@ def test_map_animation_dispatch_and_slider_scrub(app):
 
 
 def test_map_animation_play_and_auto_stop_at_end(app):
-    """Kiểm thử: nhấn Phát (anim_play) chạy từng bước và tự động dừng khi đến bước cuối cùng."""
+    """Kiểm thử: nhấn Phát (anim_play) chạy từng bước mượt mà và tự động dừng khi đến tick cuối cùng."""
     app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
     assert not app.exception
 
@@ -617,8 +617,8 @@ def test_map_animation_play_and_auto_stop_at_end(app):
     assert not app.exception
     assert app.session_state.get("anim_playing") is True
 
-    # Cho chạy qua các tick cho đến khi hết bước
-    max_ticks = 15
+    # Cho chạy qua các tick cho đến khi hết bước (chạy liên tục, không bị ngắt giữa chừng)
+    max_ticks = 60
     ticks = 0
     while app.session_state.get("anim_playing", False) and ticks < max_ticks:
         app.run()
@@ -627,6 +627,33 @@ def test_map_animation_play_and_auto_stop_at_end(app):
 
     # Đã tự động dừng khi đến bước cuối cùng
     assert app.session_state["anim_playing"] is False
+    slider = [s for s in app.slider if s.key == "anim_step"][0]
+    assert app.session_state["anim_step"] == slider.max
+
+
+def test_map_animation_pause_stops_playback(app):
+    """Kiểm thử: khi đang phát, bấm Tạm dừng (anim_pause) thì dừng ngay tại tick hiện tại."""
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    app.button(key="btn_dispatch").click().run()
+
+    app.button(key="anim_play").click().run()
+    assert app.session_state.get("anim_playing") is True
+
+    # Chạy 3 tick
+    for _ in range(3):
+        app.run()
+        assert app.session_state.get("anim_playing") is True
+
+    # Nhấn Tạm dừng
+    app.button(key="anim_pause").click().run()
+    assert not app.exception
+    assert app.session_state["anim_playing"] is False
+    assert 0 < app.session_state["anim_step"] < 30
 
 
 def test_map_animation_undo_hides_playback_controls(app):
@@ -656,55 +683,240 @@ def test_map_animation_undo_hides_playback_controls(app):
     assert "chuyến" in all_text.lower() and "hoàn tác" in all_text.lower()
 
 
-def test_build_animation_timeline_unit_contract():
-    """Kiểm thử đơn vị cho hàm build_animation_timeline: tính toán thời gian ảo, độ trễ và nét vẽ."""
-    from ui.components import build_animation_timeline
+def test_build_animation_ticks_unit_contract():
+    """Kiểm thử đơn vị hàm tạo tick: số tick mỗi cạnh trong [2, 6], tổng tick = tổng các cạnh, tick cuối trùng đỉnh đích."""
+    from ui.components import build_animation_ticks, compute_edge_ticks
+    from ui.constants import (
+        ANIM_MAX_INTERVAL,
+        ANIM_MIN_INTERVAL,
+        ANIM_TICKS_PER_EDGE_MAX,
+        ANIM_TICKS_PER_EDGE_MIN,
+    )
 
+    # 1. Kiểm tra hàm compute_edge_ticks: luôn trong [2, 6]
+    test_weights = [0.1, 0.5, 1.0, 2.0, 3.5, 5.0, 6.0, 10.0, 25.0]
+    for w in test_weights:
+        n = compute_edge_ticks(w)
+        assert ANIM_TICKS_PER_EDGE_MIN <= n <= ANIM_TICKS_PER_EDGE_MAX
+        assert isinstance(n, int)
+
+    # Trọng số cụ thể theo công thức clamp(round(w / 1.0), 2, 6)
+    assert compute_edge_ticks(0.5) == 2
+    assert compute_edge_ticks(2.0) == 2
+    assert compute_edge_ticks(4.0) == 4
+    assert compute_edge_ticks(6.0) == 6
+
+    # 2. Kiểm tra build_animation_ticks cho lộ trình gồm đón khách và chở khách
     edges = [("A", "B", 4.0), ("B", "C", 6.0), ("C", "D", 2.0)]
     def lbl(x): return f"Đỉnh {x}"
 
-    # 1. Trường hợp bình thường: chặng đón (A->B), chặng chở (B->C->D)
-    timeline = build_animation_timeline(["A", "B"], ["B", "C", "D"], edges, lbl, speed_mult=1.0)
-    assert len(timeline) == 4  # A, B, C, D
+    timeline = build_animation_ticks(["A", "B"], ["B", "C", "D"], edges, lbl, speed_mult=1.0)
+    # Cạnh A->B: w=4.0 -> 4 tick; B->C: w=6.0 -> 6 tick; C->D: w=2.0 -> 2 tick
+    # Tổng số tick = 4 + 6 + 2 = 12 tick.
+    # Số khung hình = 12 + 1 = 13 (từ tick 0 đến tick 12).
+    total_ticks = 4 + 6 + 2
+    assert len(timeline) == total_ticks + 1
+    assert timeline[0].total_ticks == total_ticks
+    assert timeline[-1].total_ticks == total_ticks
 
-    # Bước 0 (tại A): T+0, đón khách, các cạnh sắp tới đều nét đứt
-    assert timeline[0].step_index == 0
+    # Tick 0: tại A, xuất phát, T+0, 0%
+    assert timeline[0].tick_index == 0
     assert timeline[0].node == "A"
     assert timeline[0].elapsed_time == 0.0
-    assert "0.3" <= str(timeline[0].step_delay) <= "1.2"
-    assert 0.3 <= timeline[0].step_delay <= 1.2
-    assert timeline[0].custom_edges[("A", "B")][1] == "dashed"  # sắp tới
-    assert "Bước 1/4" in timeline[0].caption
+    assert timeline[0].progress_pct == 0.0
+    assert "Xuất phát" in timeline[0].caption or "0%" in timeline[0].caption
 
-    # Bước 1 (tại B): T+4, điểm đón, cạnh A->B đã đi nét liền
-    assert timeline[1].step_index == 1
-    assert timeline[1].node == "B"
-    assert timeline[1].elapsed_time == 4.0
-    assert timeline[1].custom_edges[("A", "B")][1] == "solid"
-    assert timeline[1].custom_edges[("B", "C")][1] == "dashed"
+    # Tick cuối: tại D (trùng đỉnh đích!), T+12 (4 + 6 + 2), 100%
+    assert timeline[-1].tick_index == total_ticks
+    assert timeline[-1].node == "D"
+    assert timeline[-1].elapsed_time == 12.0
+    assert timeline[-1].progress_pct == 1.0
+    assert "Đã đến Đỉnh D" in timeline[-1].caption or "100%" in timeline[-1].caption
 
-    # Bước 3 (tại D): T+12 (4 + 6 + 2), tất cả cạnh đã đi nét liền
-    assert timeline[3].step_index == 3
-    assert timeline[3].node == "D"
-    assert timeline[3].elapsed_time == 12.0
-    assert timeline[3].custom_edges[("A", "B")][1] == "solid"
-    assert timeline[3].custom_edges[("B", "C")][1] == "solid"
-    assert timeline[3].custom_edges[("C", "D")][1] == "solid"
+    # Cạnh đang đi luân phiên nét nét đặc (solid 5.0) và nét đứt (dashed 3.5)
+    # Tick 1 (chẵn=False) -> dashed 3.5; Tick 2 (chẵn=True) -> solid 5.0
+    assert timeline[1].custom_edges[("A", "B")][1] == "dashed"
+    assert timeline[1].custom_edges[("A", "B")][2] == 3.5
+    assert timeline[2].custom_edges[("A", "B")][1] == "solid"
+    assert timeline[2].custom_edges[("A", "B")][2] == 5.0
 
-    # 2. Giới hạn độ trễ [0.3, 1.2] với các tốc độ khác nhau
-    for spd in [0.5, 1.0, 2.0]:
-        t = build_animation_timeline(["A", "B", "C"], None, edges, lbl, speed_mult=spd)
-        for s in t:
-            assert 0.3 <= s.step_delay <= 1.2
+    # Cạnh đã đi qua nét liền penwidth 3.5
+    # Tại tick 5 (đã qua 4 tick cạnh A->B và đang ở cạnh B->C):
+    assert timeline[5].custom_edges[("A", "B")][1] == "solid"
+    assert timeline[5].custom_edges[("A", "B")][2] == 3.5
 
-    # 3. Biên: 1 đỉnh
-    t_single = build_animation_timeline(["A"], None, edges, lbl)
+    # 3. Giới hạn độ trễ thực tế giữa các tick: trong khoảng [ANIM_MIN_INTERVAL, ANIM_MAX_INTERVAL]
+    for tick in timeline:
+        assert ANIM_MIN_INTERVAL <= tick.tick_delay <= ANIM_MAX_INTERVAL
+
+    # 4. Xử lý biên: lộ trình 1 đỉnh trả danh sách an toàn 1 khung hình
+    t_single = build_animation_ticks(["A"], None, edges, lbl)
     assert len(t_single) == 1
+    assert t_single[0].node == "A"
     assert t_single[0].elapsed_time == 0.0
 
-    # 4. Biên: rỗng
-    t_empty = build_animation_timeline([], None, edges, lbl)
+    # 5. Xử lý biên: lộ trình rỗng trả danh sách rỗng
+    t_empty = build_animation_ticks([], None, edges, lbl)
     assert len(t_empty) == 0
+
+
+def test_playback_schedule_short_medium_long_routes_contract():
+    """Kiểm thử ngân sách thời gian: lộ trình ngắn (3), vừa (6), dài (15) ở 1x in [2, 8s], ở 4x ≈ 1/4, số khung ≥ 8."""
+    from ui.components import build_animation_ticks
+    from ui.constants import ANIM_MAX_SECONDS, ANIM_MIN_INTERVAL
+
+    edges = [(f"N{i}", f"N{i+1}", 2.0) for i in range(1, 16)]
+    lbl = lambda x: f"Đỉnh {x}"
+
+    routes = [
+        ("short", [f"N{i}" for i in range(1, 4)]),   # 3 đỉnh
+        ("medium", [f"N{i}" for i in range(1, 7)]),  # 6 đỉnh
+        ("long", [f"N{i}" for i in range(1, 16)]),  # 15 đỉnh
+    ]
+
+    for name, path in routes:
+        # Tốc độ 1x
+        t_1x = build_animation_ticks(path, None, edges, lbl, speed_mult=1.0)
+        dur_1x = (len(t_1x) - 1) * t_1x[0].tick_delay
+        assert 2.0 <= dur_1x <= ANIM_MAX_SECONDS, f"{name} 1x thời gian {dur_1x}s nằm ngoài [2.0, {ANIM_MAX_SECONDS}]"
+        assert len(t_1x) >= 8, f"{name} 1x số khung {len(t_1x)} < 8"
+        assert t_1x[0].tick_delay >= ANIM_MIN_INTERVAL
+
+        # Tốc độ 4x
+        t_4x = build_animation_ticks(path, None, edges, lbl, speed_mult=4.0)
+        dur_4x = (len(t_4x) - 1) * t_4x[0].tick_delay
+        assert t_4x[0].tick_delay >= ANIM_MIN_INTERVAL
+        assert len(t_4x) >= 8, f"{name} 4x số khung {len(t_4x)} < 8"
+        assert dur_4x <= dur_1x / 2.0 + 0.1, f"{name} 4x thời gian {dur_4x}s không nhanh hơn đáng kể so với 1x ({dur_1x}s)"
+        if name == "long":
+            # Với lộ trình dài 15 đỉnh, thời gian 4x (1.12s) xấp xỉ 1/4 của 1x (4.0s)
+            assert abs(dur_4x - (dur_1x / 4.0)) <= 0.25
+
+
+def test_map_animation_skip_button_jumps_to_end(app):
+    """AppTest: bấm nút anim_skip thì trạng thái chuyển thành 'Hoàn tất', không exception, nút bị disable."""
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+
+    # Kiểm tra nút Đến cuối (anim_skip) xuất hiện
+    skip_btns = [b for b in app.button if b.key == "anim_skip"]
+    assert len(skip_btns) == 1
+    assert not skip_btns[0].disabled
+
+    # Bấm Đến cuối
+    app.button(key="anim_skip").click().run()
+    assert not app.exception
+
+    # Kiểm tra trạng thái hoàn tất
+    slider = [s for s in app.slider if s.key == "anim_step"][0]
+    assert app.session_state["anim_step"] == slider.max
+    all_text = " ".join([m.value for m in app.markdown])
+    assert "Hoàn tất" in all_text
+
+    # Sau khi đến cuối, nút Đến cuối bị vô hiệu hóa
+    skip_btn = [b for b in app.button if b.key == "anim_skip"][0]
+    assert skip_btn.disabled
+
+
+def test_map_animation_speed_select_options_and_default(app):
+    """AppTest: tùy chọn tốc độ anim_speed gồm 1x, 2x, 4x, mặc định 2x; đổi qua cả 3 giá trị không lỗi."""
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+
+    speed_boxes = [s for s in app.selectbox if s.key == "anim_speed"]
+    assert len(speed_boxes) == 1
+    box = speed_boxes[0]
+    assert box.options == ["1x", "2x", "4x"]
+    assert box.value == "2x"
+
+    # Lần lượt chuyển qua cả 3 tốc độ không gây exception
+    for speed_val in ["1x", "2x", "4x"]:
+        app.selectbox(key="anim_speed").select(speed_val).run()
+        assert not app.exception
+        # Kiểm tra caption tổng thời gian phát hiển thị đúng
+        captions = [c.value for c in app.caption if "Tổng thời gian phát ≈" in c.value]
+        assert len(captions) >= 1
+
+
+def test_map_animation_scrub_many_values_and_completed_status(app):
+    """AppTest: ghép chuyến, đặt anim_step ở nhiều giá trị không có exception, tua đến tick cuối hiển thị Hoàn tất."""
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    # Gửi yêu cầu đặt xe và ghép chuyến
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+
+    sliders = [s for s in app.slider if s.key == "anim_step"]
+    assert len(sliders) == 1
+    slider = sliders[0]
+    max_val = int(slider.max)
+    assert max_val >= 4
+
+    # Đặt anim_step ở nhiều giá trị: 0, 1, nửa chừng, và cuối cùng
+    for test_step in [0, 1, max_val // 2, max_val]:
+        app.slider(key="anim_step").set_value(test_step).run()
+        assert not app.exception
+        assert app.session_state["anim_step"] == test_step
+
+    # Khi tua đến tick cuối cùng, trạng thái là Hoàn tất
+    all_text = " ".join([m.value for m in app.markdown])
+    assert "Hoàn tất" in all_text
+
+    # anim_progress được cập nhật trong session_state
+    assert "anim_progress" in app.session_state
+    assert 0.0 <= float(app.session_state["anim_progress"]) <= 1.0
+
+
+def test_map_animation_consecutive_dispatches_rebuild_cache(app):
+    """AppTest: ghép 2 chuyến liên tiếp thì danh sách khung hình (timeline cache) được dựng lại (không dùng khung cũ)."""
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    # Ghép chuyến 1: N3 -> N7
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+
+    cache_key_1 = app.session_state.get("_anim_timeline_cache_key")
+    assert cache_key_1 is not None
+
+    # Ghép chuyến 2: N2 -> N5
+    _pick(app, "req_pickup", "N2")
+    _pick(app, "req_dropoff", "N5")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+
+    cache_key_2 = app.session_state.get("_anim_timeline_cache_key")
+    assert cache_key_2 is not None
+    # Khóa cache của chuyến 2 phải khác chuyến 1 -> timeline được dựng lại
+    assert cache_key_2 != cache_key_1
 
 
 def test_dispatch_failure_renders_without_key_error_result(app):

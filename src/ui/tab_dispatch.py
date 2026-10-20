@@ -236,9 +236,16 @@ def _render_last_result() -> None:
 
 def _render_map(d, queue, drivers) -> None:
     from .components import (
-        build_animation_timeline,
+        AnimationTick,
+        build_animation_ticks,
         render_animation_badge,
+        render_animation_status_badge,
         render_graph_with_zoom,
+    )
+    from .constants import (
+        ANIM_STATUS_COMPLETED,
+        ANIM_STATUS_PAUSED,
+        ANIM_STATUS_PLAYING,
     )
     from .graph_view import build_dot
 
@@ -301,6 +308,7 @@ def _render_map(d, queue, drivers) -> None:
         st.session_state["anim_step"] = 0
         st.session_state["anim_playing"] = False
         st.session_state["anim_just_played"] = False
+        st.session_state["_anim_timeline_cache_key"] = None
 
     # 6. Tự động phát sau khi ghép (anim_auto)
     if selected_type == "last" and st.session_state.get("anim_auto", False):
@@ -351,52 +359,94 @@ def _render_map(d, queue, drivers) -> None:
                     f"{preview_res.driver_id} nhận, ETA {preview_res.eta:g} phút."
                 )
 
-    speed_label = st.session_state.get("anim_speed", "1x")
-    speed_mult = {"0.5x": 0.5, "1x": 1.0, "2x": 2.0}.get(speed_label, 1.0)
+    speed_label = st.session_state.get("anim_speed", "2x")
+    speed_mult = {"1x": 1.0, "2x": 2.0, "4x": 4.0}.get(speed_label, 2.0)
+    avg_render_time = st.session_state.get("anim_avg_render_time", 0.0)
 
-    timeline = build_animation_timeline(
-        pickup_path=pickup_path,
-        ride_path=ride_path,
-        graph_edges=d.graph.edges(),
-        node_label_fn=S.node_label,
-        speed_mult=speed_mult,
-    )
-    total_steps = len(timeline)
+    # Tiền kết xuất và lưu cache chuỗi DOT cho từng tick (YÊU CẦU 3.a)
+    route_signature = f"{target_id}_p{len(pickup_path)}_r{len(ride_path)}_{','.join(pickup_path)}_{','.join(ride_path)}_{speed_label}"
+    drivers_sig = f"{len(drivers)}_{sum(1 for drv in drivers.values() if drv.status == FREE)}"
+    timeline_cache_key = f"{route_signature}_{drivers_sig}"
+
+    if (
+        st.session_state.get("_anim_timeline_cache_key") != timeline_cache_key
+        or "_anim_cached_timeline" not in st.session_state
+    ):
+        import time
+        _t0 = time.perf_counter()
+        timeline = build_animation_ticks(
+            pickup_path=pickup_path,
+            ride_path=ride_path,
+            graph_edges=d.graph.edges(),
+            node_label_fn=S.node_label,
+            speed_mult=speed_mult,
+            drivers=drivers,
+            queue=queue,
+            nodes=d.graph.nodes(),
+            precompute_dots=True,
+            avg_render_time=avg_render_time,
+        )
+        _render_cost = time.perf_counter() - _t0
+        st.session_state["_anim_cached_timeline"] = timeline
+        st.session_state["_anim_timeline_cache_key"] = timeline_cache_key
+        st.session_state["_anim_last_render_cost"] = _render_cost
+
+        # Lưu thời gian render trung bình đo được vào session_state (YÊU CẦU 5)
+        measured_render = getattr(timeline, "avg_render_time", 0.0) or getattr(timeline, "_avg_render_time", 0.0)
+        if measured_render > 0:
+            st.session_state["anim_avg_render_time"] = measured_render
+            st.session_state["anim_render_time"] = measured_render
+    else:
+        timeline = st.session_state["_anim_cached_timeline"]
+
+    total_ticks = timeline[-1].total_ticks if timeline else 0
+    total_frames = len(timeline)
+    max_step = max(0, total_frames - 1)
 
     # 8. Tính toán delay động cho run_every của st.fragment
     is_playing = st.session_state.get("anim_playing", False)
     cur_step = st.session_state.get("anim_step", 0)
 
-    # Hết bước thì tự dừng
-    if is_playing and total_steps > 0 and cur_step >= total_steps - 1:
-        is_playing = False
-        st.session_state["anim_playing"] = False
-
-    if is_playing and total_steps > 0:
-        run_every_delay = timeline[min(cur_step, total_steps - 1)].step_delay
+    if is_playing and total_frames > 0:
+        run_every_delay = timeline[min(cur_step, total_frames - 1)].tick_delay
     else:
         run_every_delay = None
 
     # 9. Callback functions cho các nút điều khiển
     def on_play() -> None:
         cur = st.session_state.get("anim_step", 0)
-        if cur >= total_steps - 1:
+        if cur >= max_step:
             st.session_state["anim_step"] = 0
+            st.session_state["_current_anim_step"] = 0
         st.session_state["anim_playing"] = True
         st.session_state["anim_just_played"] = True
+        st.rerun()
 
     def on_pause() -> None:
         st.session_state["anim_playing"] = False
         st.session_state["anim_just_played"] = False
+        st.session_state["_current_anim_step"] = st.session_state.get("anim_step", 0)
+        st.rerun()
 
     def on_restart() -> None:
         st.session_state["anim_step"] = 0
+        st.session_state["_current_anim_step"] = 0
         st.session_state["anim_playing"] = True
         st.session_state["anim_just_played"] = True
+        st.rerun()
+
+    def on_skip() -> None:
+        st.session_state["anim_step"] = max_step
+        st.session_state["_current_anim_step"] = max_step
+        st.session_state["anim_playing"] = False
+        st.session_state["anim_just_played"] = False
+        st.rerun()
 
     def on_step_change() -> None:
         st.session_state["anim_playing"] = False
         st.session_state["anim_just_played"] = False
+        st.session_state["_current_anim_step"] = st.session_state.get("anim_step", 0)
+        st.rerun()
 
     # 10. Fragment hiển thị bản đồ và bộ điều khiển
     @st.fragment(run_every=run_every_delay)
@@ -404,33 +454,59 @@ def _render_map(d, queue, drivers) -> None:
         # Xử lý tick đồng hồ chuyển bước
         if st.session_state.get("anim_playing", False):
             if st.session_state.get("anim_just_played", False):
+                # Vừa bấm Phát hoặc Phát lại: hiển thị ngay khung hình hiện tại
                 st.session_state["anim_just_played"] = False
+                st.session_state["_current_anim_step"] = st.session_state.get("anim_step", 0)
             else:
-                s = st.session_state.get("anim_step", 0)
-                if s < total_steps - 1:
-                    st.session_state["anim_step"] = s + 1
-                else:
-                    st.session_state["anim_playing"] = False
+                last_s = st.session_state.get("_current_anim_step", st.session_state.get("anim_step", 0))
+                client_s = st.session_state.get("anim_step", last_s)
+                if abs(client_s - last_s) > 1:
+                    last_s = client_s
 
-        playing_now = st.session_state.get("anim_playing", False)
+                if last_s < max_step:
+                    next_s = last_s + 1
+                    st.session_state["anim_step"] = next_s
+                    st.session_state["_current_anim_step"] = next_s
+                else:
+                    # Khi đến cuối lộ trình: tự động dừng theo đúng yêu cầu
+                    st.session_state["anim_playing"] = False
+                    st.session_state["anim_step"] = max_step
+                    st.session_state["_current_anim_step"] = max_step
+                    st.rerun()
+
+        # Cập nhật anim_step TRƯỚC KHI tạo widget slider
         if "anim_step" not in st.session_state:
             st.session_state["anim_step"] = 0
-        step_idx = min(max(0, st.session_state.get("anim_step", 0)), max(0, total_steps - 1))
+        step_idx = min(max(0, st.session_state.get("anim_step", 0)), max_step)
         st.session_state["anim_step"] = step_idx
 
+        playing_now = st.session_state.get("anim_playing", False)
+        if not playing_now and max_step > 0 and step_idx >= max_step:
+            anim_status = ANIM_STATUS_COMPLETED
+        elif playing_now:
+            anim_status = ANIM_STATUS_PLAYING
+        else:
+            anim_status = ANIM_STATUS_PAUSED
+
+        current_tick_info = timeline[step_idx] if (timeline and step_idx < len(timeline)) else None
+
+        # Cập nhật giá trị tiến độ tổng cho anim_progress
+        if current_tick_info:
+            st.session_state["anim_progress"] = current_tick_info.progress_pct
+
         # Bảng điều khiển animation (chỉ hiển thị khi có chuyến và không bị hoàn tác)
-        if total_steps > 0 and not is_last_undone:
+        if total_frames > 0 and not is_last_undone:
             with st.container(key="anim_controls_box", border=True):
-                c1, c2, c3, c4, c5 = st.columns([1.1, 1.2, 1.2, 1.3, 2.5], vertical_alignment="center")
+                c1, c2, c3, c_skip, c4, c5 = st.columns([1.1, 1.2, 1.2, 1.3, 1.1, 2.3], vertical_alignment="center")
                 with c1:
                     st.button(
                         "▶ Phát",
                         key="anim_play",
                         on_click=on_play,
-                        disabled=(total_steps <= 1 or playing_now),
+                        disabled=(max_step <= 0 or playing_now),
                         type="primary" if not playing_now else "secondary",
                         width="stretch",
-                        help="Phát lại từng bước lộ trình",
+                        help="Phát lại từng tick lộ trình",
                     )
                 with c2:
                     st.button(
@@ -446,17 +522,26 @@ def _render_map(d, queue, drivers) -> None:
                         "⏮ Phát lại",
                         key="anim_restart",
                         on_click=on_restart,
-                        disabled=(total_steps <= 1),
+                        disabled=(max_step <= 0),
                         width="stretch",
-                        help="Quay lại bước xuất phát đầu tiên",
+                        help="Quay lại tick 0 xuất phát ban đầu và phát lại",
+                    )
+                with c_skip:
+                    st.button(
+                        "⏭ Đến cuối",
+                        key="anim_skip",
+                        on_click=on_skip,
+                        disabled=(max_step <= 0 or step_idx >= max_step),
+                        width="stretch",
+                        help="Nhảy thẳng tới tick cuối cùng và hoàn tất lộ trình",
                     )
                 with c4:
                     st.selectbox(
                         "Tốc độ",
-                        options=["0.5x", "1x", "2x"],
+                        options=["1x", "2x", "4x"],
                         index=1,
                         key="anim_speed",
-                        help="Tốc độ mô phỏng lộ trình",
+                        help="Tốc độ mô phỏng lộ trình (1x / 2x / 4x)",
                     )
                 with c5:
                     st.toggle(
@@ -465,22 +550,42 @@ def _render_map(d, queue, drivers) -> None:
                         help="Tự động phát lộ trình ngay sau khi điều phối chuyến thành công",
                     )
 
-                slider_max = max(1, total_steps - 1)
+                slider_max = max(1, max_step)
                 st.slider(
-                    "Tua bước lộ trình",
+                    "Tua tick lộ trình",
                     min_value=0,
                     max_value=slider_max,
-                    disabled=(total_steps <= 1),
+                    disabled=(max_step <= 0),
                     key="anim_step",
-                    on_change=on_step_change,
-                    help="Kéo để tua đến bước bất kỳ trong lộ trình",
+                    on_change=(None if playing_now else on_step_change),
+                    help="Kéo để tua đến tick bất kỳ trong lộ trình",
                 )
 
-                render_animation_badge(timeline[step_idx])
+                if current_tick_info:
+                    # Thanh tiến độ tổng anim_progress
+                    pct_val = min(1.0, max(0.0, float(current_tick_info.progress_pct)))
+                    edge_lbl = current_tick_info.edge_label or "Lộ trình"
+                    edge_p = round(current_tick_info.edge_pct)
+                    progress_msg = f"Tiến độ toàn lộ trình: {round(pct_val * 100)}% • Đang đi: {edge_lbl} ({edge_p}%)"
+                    try:
+                        st.progress(pct_val, text=progress_msg, key="anim_progress")
+                    except TypeError:
+                        st.progress(pct_val, text=progress_msg)
 
-        # Tạo DOT đồ thị cho khung hình hiện tại
-        if total_steps > 0 and not is_last_undone:
-            current_step_info = timeline[step_idx]
+                    render_animation_badge(current_tick_info, status=anim_status)
+
+                # Dòng caption nhỏ tổng thời gian phát (YÊU CẦU 5)
+                schedule_obj = getattr(timeline, "schedule", None) or getattr(timeline, "_schedule", None)
+                if schedule_obj:
+                    est_sec = schedule_obj.total_seconds
+                else:
+                    est_sec = max_step * (timeline[0].tick_delay if timeline else 0.1)
+                st.caption(f"⏱️ Tổng thời gian phát ≈ {est_sec:.1f} giây")
+
+        # Lấy DOT đồ thị đã được tiền kết xuất trong cache (YÊU CẦU 3.a)
+        if total_frames > 0 and not is_last_undone and current_tick_info and current_tick_info.dot_string:
+            dot_dispatch = current_tick_info.dot_string
+        elif total_frames > 0 and not is_last_undone and current_tick_info:
             dot_dispatch = build_dot(
                 edges=d.graph.edges(),
                 drivers=drivers,
@@ -489,8 +594,8 @@ def _render_map(d, queue, drivers) -> None:
                 nodes=d.graph.nodes(),
                 routes=None,
                 layout="neato",
-                highlight_node=current_step_info.node,
-                custom_edges=current_step_info.custom_edges,
+                highlight_node=current_tick_info.node,
+                custom_edges=current_tick_info.custom_edges,
             )
         else:
             # Chế độ bản đồ tĩnh cơ bản (xem trước hoặc khi chưa có chuyến / đã hoàn tác)
@@ -600,10 +705,10 @@ def render() -> None:
         title="Điều phối chuyến",
         subtitle="Nhận yêu cầu, ghép tài xế tối ưu và hoàn tác thao tác",
         chips=[
-            ("**Hàng đợi**", f"{len(queue)} --- "),
-            ("**Xe rảnh**", f"{free_count} --- "),
-            ("**Chuyến đang chạy**", f"{active_trips_count} --- "),
-            ("**Chiến lược**", f"{current_strat}"),
+            ("Hàng đợi", f"{len(queue)}"),
+            ("Xe rảnh", f"{free_count}"),
+            ("Chuyến đang chạy", f"{active_trips_count}"),
+            ("Chiến lược", f"{current_strat}"),
         ],
     )
 
