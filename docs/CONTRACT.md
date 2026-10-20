@@ -23,8 +23,9 @@
   - Thuộc tính: `id: str`, `pickup_node: str`, `dropoff_node: str`, `status: str = QUEUED`.
   - Trạng thái hợp lệ: `QUEUED`, `ASSIGNED`, hoặc `CANCELLED`.
 - **Lớp `Trip`**:
-  - Thuộc tính: `id: str`, `request_id: str`, `driver_id: str`, `eta: float`, `status: str = ASSIGNED`.
+  - Thuộc tính: `id: str`, `request_id: str`, `driver_id: str`, `eta: float`, `status: str = ASSIGNED`, `pickup_path: list[str] = []` (tùy chọn khi khởi tạo: `pickup_path: list[str] | None = None`).
   - Trạng thái hợp lệ: `ASSIGNED`, `COMPLETED`, hoặc `CANCELLED`.
+  - Quy tắc serialize: `to_dict()` chỉ thêm khóa `"pickup_path"` khi danh sách khác rỗng để giữ tương thích ngược với dữ liệu cũ; `from_dict()` đọc qua `data.get("pickup_path")`. `__eq__` và hashing giữ nguyên theo `id`.
 
 ---
 
@@ -102,9 +103,21 @@
     - `update_driver(driver_id: str, name: str | None = None, node: str | None = None) -> Driver`: Cập nhật thông tin tài xế. Không cho phép đổi vị trí nếu tài xế đang `BUSY`. Tên tài xế được chuẩn hóa qua `strip()`.
     - `remove_driver(driver_id: str) -> bool`: Xóa tài xế; ném `ValueError` nếu tài xế đang ở trạng thái `BUSY`, hoặc đã có lịch sử tham gia chuyến đi trong `trips` (bao gồm cả chuyến đã hủy `CANCELLED`).
   - **Điều phối chuyến**:
-    - `dispatch_next(strategy: MatchStrategy) -> Trip | None`: Lấy yêu cầu ở đầu hàng đợi (`peek()`). Nếu không có yêu cầu, không có tài xế rảnh, hoặc không có đường đi đến điểm đón: ghi nhận mã lý do thất bại vào `self.last_failure` (`"empty_queue"`, `"no_free_driver"`, `"no_route"`), đặt `self.last_match_result = None`, trả về `None` và giữ nguyên yêu cầu ở đầu hàng đợi. Nếu thành công: dequeue request, chuyển request sang `ASSIGNED`, chuyển driver sang `BUSY`, tạo `Trip` mới (ID tự sinh `T` + số), lưu kết quả thuật toán vào `self.last_match_result: MatchResult`, đặt `self.last_failure = None` và trả về `Trip` (thao tác atomic: xác thực mọi điều kiện trước khi biến đổi dữ liệu).
+    - `dispatch_next(strategy: MatchStrategy) -> Trip | None`: Lấy yêu cầu ở đầu hàng đợi (`peek()`). Nếu không có yêu cầu, không có tài xế rảnh, hoặc không có đường đi đến điểm đón: ghi nhận mã lý do thất bại vào `self.last_failure` (`"empty_queue"`, `"no_free_driver"`, `"no_route"`), đặt `self.last_match_result = None`, trả về `None` và giữ nguyên yêu cầu ở đầu hàng đợi. Nếu thành công: dequeue request, chuyển request sang `ASSIGNED`, chuyển driver sang `BUSY`, tạo `Trip` mới (ID tự sinh `T` + số, truyền `pickup_path=list(result.path) if result.path else []`), lưu kết quả thuật toán vào `self.last_match_result: MatchResult`, đặt `self.last_failure = None` và trả về `Trip` (thao tác atomic: xác thực mọi điều kiện trước khi biến đổi dữ liệu).
     - `dispatch_all(strategy: MatchStrategy) -> list[Trip]`: Điều phối liên tục các yêu cầu trong hàng đợi cho đến khi hàng đợi rỗng hoặc không thể ghép thêm chuyến nào. Trả về danh sách các `Trip` được tạo.
     - `ride_estimate(request_id_or_pickup: str, dropoff_node: str | None = None) -> tuple[float, list[str]] | None`: Tính khoảng cách/thời gian và lộ trình di chuyển từ điểm đón đến điểm trả khách bằng thuật toán tìm đường ngắn nhất. Hỗ trợ 2 cách gọi: truyền `request_id` (tra cứu điểm đón/trả từ yêu cầu đã lưu) hoặc truyền trực tiếp cặp `(pickup_node, dropoff_node)`. Trả về `(quang_duong, danh_sach_dinh)` hoặc `None` nếu không có đường đi.
+    - `trip_route(trip_id: str) -> dict | None`: Tra cứu thông tin lộ trình đầy đủ hai chặng của chuyến xe để phục vụ trực quan hóa bản đồ và animation. Trả về `None` nếu `trip_id` không tồn tại hoặc thiếu request tương ứng. Trả về dict:
+      ```python
+      {
+          "pickup_path": list[str],      # Danh sách đỉnh chặng xe đến điểm đón
+          "ride_path": list[str],        # Danh sách đỉnh chặng chở khách đến điểm trả
+          "pickup_eta": float,           # Thời gian đón khách (bằng trip.eta)
+          "ride_eta": float | None,      # Thời gian chở khách (None nếu không có đường đi)
+          "pickup_known": bool,          # True nếu có dữ liệu lộ trình đón (hoặc suy diễn được)
+      }
+      ```
+      - Quy tắc `ride_path`/`ride_eta`: Tính qua `shortest_path(pickup_node, dropoff_node)`; nếu không có đường đi thì `ride_path = []` và `ride_eta = None`.
+      - Quy tắc `pickup_path`/`pickup_known`: Ưu tiên dùng `trip.pickup_path` nếu khác rỗng (`pickup_known = True`). Nếu `trip.pickup_path` rỗng và `trip.status == ASSIGNED` thì tính qua `shortest_path(driver.node, pickup_node)` do tài xế chưa di chuyển (`pickup_known = True`). Ngược lại (chuyến hoàn thành hoặc đã hủy không có đường đón lưu): `pickup_path = []` và `pickup_known = False`.
   - **Vòng đời tài xế, Hoàn thành & Hủy chuyến**:
     - `complete_trip(trip_id: str) -> bool`: Tìm chuyến đi tương ứng. Nếu không tồn tại hoặc `trip.status != ASSIGNED` thì trả về `False`. Ngược lại đổi `Trip.status` sang `COMPLETED`, gọi `driver.release()` để chuyển tài xế về `FREE`, cập nhật vị trí tài xế về `dropoff_node` của chuyến và trả về `True`.
     - `cancel_trip(trip_id: str) -> bool`: Hủy chuyến đã điều phối (`ASSIGNED`). Tìm chuyến đi; nếu không tồn tại hoặc `trip.status != ASSIGNED` thì trả về `False` và không thay đổi bất kỳ dữ liệu nào. Ngược lại: kiểm tra tài xế và yêu cầu tương ứng tồn tại trước khi cập nhật (nguyên tử); đổi `Trip.status = CANCELLED`; gọi `driver.release()` giải phóng tài xế về `FREE` tại vị trí hiện tại (không đổi `node`); đổi `request.status = CANCELLED` (theo quyết định D1=A: yêu cầu được lưu trong `all_requests`, KHÔNG quay lại hàng đợi `RequestQueue`); trả về `True`.
@@ -137,18 +150,19 @@
         "locations": dict[str, Location],
     }
     ```
-  - `save_all(state: dict) -> None`: Nhận dict các đối tượng trên, chuyển đổi qua `to_dict()` và ghi an toàn xuống 4 file JSON trong `data/runtime/`. Chấp nhận và bảo toàn trạng thái `CANCELLED` của `Trip` và `RideRequest`.
+  - `save_all(state: dict) -> None`: Nhận dict các đối tượng trên, chuyển đổi qua `to_dict()` và ghi an toàn xuống 4 file JSON trong `data/runtime/`. Chấp nhận và bảo toàn trạng thái `CANCELLED` của `Trip` và `RideRequest`. Tự động lưu `pickup_path` nếu danh sách khác rỗng.
 - **Schema JSON (khóa gốc bắt buộc)**:
   - `graph.json`: `{"nodes": [{"id": "N1", "name": "Ngã tư A"}], "edges": [{"from": "N1", "to": "N2", "weight": 5.0}]}`
   - `drivers.json`: `{"drivers": [{"id": "D1", "name": "An", "node": "N1", "status": "free"}]}`
   - `requests.json`: `{"requests": [{"id": "R1", "pickup_node": "N3", "dropoff_node": "N7", "status": "queued"}]}`
-  - `trips.json`: `{"trips": [{"id": "T1", "request_id": "R1", "driver_id": "D1", "eta": 7.0, "status": "assigned"}]}`
+  - `trips.json`: `{"trips": [{"id": "T1", "request_id": "R1", "driver_id": "D1", "eta": 7.0, "status": "assigned", "pickup_path": ["N1", "N2"]}]}` (khóa `"pickup_path"` là tùy chọn: danh sách đỉnh lộ trình đón khách).
 - **Kiểm tra tính nhất quán dữ liệu (Data Consistency Checks)**:
   - Tài xế bận (`BUSY`) phải có đúng một chuyến đang chạy (`ASSIGNED`).
   - Tài xế rảnh (`FREE`) không được có chuyến đang chạy (`ASSIGNED`).
   - Yêu cầu `ASSIGNED` phải gắn với một chuyến `ASSIGNED` tương ứng.
   - Yêu cầu `QUEUED` không được gắn với chuyến `ASSIGNED`.
   - Yêu cầu `CANCELLED` không được gắn với chuyến `ASSIGNED` hoặc `COMPLETED`.
+  - Nếu chuyến có `pickup_path`: mọi đỉnh phải tồn tại trên đồ thị, đỉnh cuối cùng phải trùng với `pickup_node` của yêu cầu tương ứng, và các cặp đỉnh liên tiếp phải là cạnh có thật trên đồ thị.
   - Mọi vi phạm tính nhất quán ném `StorageError(Exception)` kèm thông báo tiếng Việt rõ ràng.
 - **Quản lý ngoại lệ**:
   - Ném `StorageError(Exception)` kèm thông báo rõ ràng khi file JSON sai định dạng, thiếu khóa gốc hoặc có ID tham chiếu không tồn tại.

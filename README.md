@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Framework](https://img.shields.io/badge/Streamlit-1.66%2B-FF4B4B.svg)](https://streamlit.io/)
 [![Package Manager](https://img.shields.io/badge/uv-Astral-purple.svg)](https://docs.astral.sh/uv/)
-[![Tests](https://img.shields.io/badge/pytest-162%20passed-brightgreen.svg)](https://pytest.org/)
+[![Tests](https://img.shields.io/badge/pytest-179%20passed-brightgreen.svg)](https://pytest.org/)
 
 ---
 
@@ -116,6 +116,16 @@ Module1/
 - Yêu cầu chuyển sang trạng thái `CANCELLED` và **không quay lại hàng đợi FIFO** (theo quyết định D1 = A) nhằm phản ánh đúng ý định hủy và giữ vững tính minh bạch.
 - Giao diện tích hợp hộp thoại modal xác nhận (`st.dialog`) với thông báo cảnh báo rõ ràng; tự động ẩn các nút thao tác sau khi hủy và hiển thị huy hiệu `⛔ Đã hủy`.
 
+### 🗺️ Xem lại lộ trình hai chặng & Lưu trữ lộ trình đón (Two-Leg Route Replay)
+- **Hiển thị đủ 2 chặng cho mọi chuyến**: Cả chuyến vừa ghép lẫn chuyến xem lại trong lịch sử đều hiển thị đầy đủ hai chặng trực quan:
+  1. **Chặng đón khách**: Xe di chuyển từ vị trí ban đầu của tài xế đến điểm đón khách (màu xanh lá `#16a34a`, nét liền).
+  2. **Chặng chở khách**: Xe chở khách từ điểm đón đến điểm trả khách (màu cam `#ea580c`, nét đứt).
+- **Lưu trữ bền vững**: Thuộc tính `pickup_path` được lưu trực tiếp vào thực thể `Trip` và ghi nhận an toàn xuống file `trips.json`, bảo toàn lộ trình đón khách kể cả sau khi tài xế đã hoàn thành chuyến (`driver.node` đã cập nhật tới điểm trả) hoặc sau khi làm mới trang (F5 / Rerun).
+- **Cơ chế suy diễn & Tương thích ngược**:
+  - Đối với chuyến đang chạy (`ASSIGNED`) chưa lưu đường đón (dữ liệu seed `T2`), hệ thống tự động suy diễn chặng đón từ vị trí hiện tại của tài xế qua `shortest_path(driver.node, pickup_node)`.
+  - Đối với dữ liệu lịch sử cũ được tạo trước khi hệ thống lưu lộ trình đón (chuyến seed `T1`), hệ thống hiển thị thông báo thân thiện chỉ hiển thị chặng chở khách mà không gây lỗi.
+- **Animation Timelapse thông minh**: Hỗ trợ tua và phát toàn bộ 2 chặng nối tiếp nhau kèm mốc thời gian ảo `T+xx.x phút`, thông số tiến độ và tự động dừng khi kết thúc lộ trình.
+
 ### 💾 Lưu trữ dữ liệu an toàn (Atomic JSON Storage)
 - Quá trình ghi dữ liệu áp dụng cơ chế **atomic từng file, giảm rủi ro bất nhất quán giữa các file**: toàn bộ 4 file được chuẩn bị và flush/fsync vào file tạm `.tmp` trước khi hoán đổi nguyên tử (`os.replace`) sang file chính thức nhằm giảm thiểu tối đa rủi ro mất mát hoặc hỏng file JSON nếu chương trình bị ngắt đột ngột.
 - Tự động tách biệt thư mục gốc `data/seed/` và thư mục hoạt động `data/runtime/`.
@@ -188,7 +198,7 @@ uv run pytest -v
 
 Kết quả kiểm thử chuẩn:
 ```text
-============================= 162 passed in 11.52s =============================
+============================= 179 passed in 10.37s =============================
 ```
 
 ---
