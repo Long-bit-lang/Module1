@@ -2,7 +2,16 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
+
+# Đảm bảo thư mục 'src' luôn có trong sys.path để import models, core, ui thành công trên mọi môi trường
+_SRC = Path(__file__).resolve().parent
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+_ROOT = _SRC.parent
+if str(_ROOT) not in sys.path:
+    sys.path.append(str(_ROOT))
 
 import streamlit as st
 
