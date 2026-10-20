@@ -1,7 +1,6 @@
 import pytest
 
 from core.structures import RequestQueue, Stack
-from core.undo_manager import DispatchAction, UndoManager
 from models.ride_request import RideRequest
 from models.trip import Trip
 
@@ -10,18 +9,15 @@ def request(id):
     return RideRequest(id, "N1", "N2")
 
 
-def test_queue_fifo_and_requeue_head():
+def test_queue_fifo():
     q = RequestQueue()
-    r1, r2, r3 = request("R1"), request("R2"), request("R3")
+    r1, r2 = request("R1"), request("R2")
     assert q.peek() is None
     q.enqueue(r1)
     q.enqueue(r2)
     assert q.peek() is r1
     assert len(q) == 2
     assert q.dequeue() is r1
-    q.requeue_head(r3)
-    assert [r.id for r in q] == ["R3", "R2"]
-    assert q.dequeue() is r3
     assert q.dequeue() is r2
     assert q.peek() is None
     assert len(q) == 0
@@ -115,85 +111,12 @@ def test_stack_lifo_and_clear():
     assert len(s) == 0
 
 
-# ------- Step 2: UndoManager tests (does not mutate domain objects) -------
-
-def _dispatch_action(number: int) -> DispatchAction:
-    req = request(f"R{number}")
-    trip = Trip(f"T{number}", req.id, "D1", 3.5)
-    return DispatchAction(trip, "D1", req, previous_driver_node="N1")
-
-
-def test_undo_manager_empty_history():
-    manager = UndoManager()
-    assert len(manager.undo_stack) == 0
-    assert len(manager.redo_stack) == 0
-    assert manager.undo() is None
-    assert manager.redo() is None
-
-
-def test_undo_manager_record_and_undo_once():
-    manager = UndoManager()
-    action = _dispatch_action(1)
-    manager.record(action)
-    assert len(manager.undo_stack) == 1
-    assert manager.undo() is action
-    assert len(manager.undo_stack) == 0
-    assert len(manager.redo_stack) == 1
-    assert manager.undo() is None
-
-
-def test_undo_manager_redo_once():
-    manager = UndoManager()
-    action = _dispatch_action(1)
-    manager.record(action)
-    manager.undo()
-    assert manager.redo() is action
-    assert len(manager.undo_stack) == 1
-    assert len(manager.redo_stack) == 0
-    assert manager.redo() is None
-
-
-def test_undo_manager_lifo_multiple_actions():
-    manager = UndoManager()
-    first = _dispatch_action(1)
-    second = _dispatch_action(2)
-    manager.record(first)
-    manager.record(second)
-    assert manager.undo() is second
-    assert manager.undo() is first
-    assert manager.redo() is first
-    assert manager.redo() is second
-    assert len(manager.undo_stack) == 2
-    assert len(manager.redo_stack) == 0
-
-
-def test_new_record_clears_redo_history():
-    manager = UndoManager()
-    first = _dispatch_action(1)
-    second = _dispatch_action(2)
-    manager.record(first)
-    manager.undo()
-    assert len(manager.redo_stack) == 1
-    manager.record(second)
-    assert len(manager.redo_stack) == 0
-    assert manager.redo() is None
-    assert manager.undo() is second
-
-
-def test_dispatch_action_retains_previous_driver_node():
-    action = _dispatch_action(1)
-    assert action.driver_id == "D1"
-    assert action.request.id == "R1"
-    assert action.trip.id == "T1"
-    assert action.previous_driver_node == "N1"
-
-
 # ------- Step 3: Dispatcher business-flow tests (need Nhi/Duy modules) -------
 
 from core.dispatcher import Dispatcher
 from core.road_graph import RoadGraph
 from core.strategies import MatchResult, MatchStrategy, DijkstraPerDriver, ReverseDijkstra
-from models import ASSIGNED, BUSY, COMPLETED, FREE, QUEUED
+from models import ASSIGNED, BUSY, CANCELLED, COMPLETED, FREE, QUEUED
 from models.driver import Driver
 from models.location import Location
 
@@ -285,7 +208,6 @@ def test_dispatch_success_with_fake_strategy(graph_for_dispatcher):
     assert [r.id for r in dispatcher.export_state()['requests']] == ['R1']
     assert fake.calls == [('N3', {'D1': 'N1', 'D2': 'N2'})]
     assert dispatcher.last_match_result.visited_count == 1
-    assert dispatcher.can_undo() is True
 
 
 def test_dispatch_no_request_returns_none(graph_for_dispatcher):
@@ -325,7 +247,6 @@ def test_dispatch_invalid_strategy_result_is_atomic(graph_for_dispatcher):
     assert dispatcher.queue.peek() is req
     assert dispatcher.drivers['D1'].status == FREE
     assert dispatcher.trips == []
-    assert dispatcher.can_undo() is False
 
 
 def test_dispatch_eta_zero_is_success(graph_for_dispatcher):
@@ -345,8 +266,6 @@ def test_complete_trip_frees_driver_at_dropoff(graph_for_dispatcher):
     assert dispatcher.drivers['D1'].node == 'N4'
     assert dispatcher.complete_trip(trip.id) is False
     assert dispatcher.complete_trip('T999') is False
-    assert dispatcher.can_undo() is False
-    assert dispatcher.undo() is False
 
 
 def test_busy_driver_cannot_be_removed(graph_for_dispatcher):
@@ -355,76 +274,6 @@ def test_busy_driver_cannot_be_removed(graph_for_dispatcher):
     dispatcher.dispatch_next(FakeStrategy())
     with pytest.raises(ValueError):
         dispatcher.remove_driver('D1')
-
-
-def test_undo_redo_restore_queue_driver_trip(graph_for_dispatcher):
-    dispatcher = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1')})
-    r1 = dispatcher.submit_request('N3', 'N4')
-    r2 = dispatcher.submit_request('N2', 'N4')
-    trip = dispatcher.dispatch_next(FakeStrategy())
-    assert [r.id for r in dispatcher.queue] == [r2.id]
-    assert dispatcher.undo() is True
-    assert [r.id for r in dispatcher.queue] == [r1.id, r2.id]
-    assert r1.status == QUEUED
-    assert dispatcher.drivers['D1'].status == FREE
-    assert dispatcher.drivers['D1'].node == 'N1'
-    assert dispatcher.trips == []
-    assert dispatcher.can_redo() is True
-    assert dispatcher.redo() is True
-    assert [r.id for r in dispatcher.queue] == [r2.id]
-    assert r1.status == ASSIGNED
-    assert dispatcher.trips[0] is trip
-    assert dispatcher.drivers['D1'].status == BUSY
-    assert dispatcher.can_redo() is False
-
-
-def test_undo_redo_multiple_actions_lifo(graph_for_dispatcher):
-    dispatcher = Dispatcher(graph_for_dispatcher, {
-        'D1': Driver('D1', 'An', 'N1'),
-        'D2': Driver('D2', 'Binh', 'N2'),
-    })
-    dispatcher.submit_request('N3', 'N4')
-    dispatcher.submit_request('N2', 'N4')
-    t1 = dispatcher.dispatch_next(FakeStrategy('D1'))
-    t2 = dispatcher.dispatch_next(FakeStrategy('D2'))
-    assert [t.id for t in dispatcher.trips] == ['T1', 'T2']
-    assert dispatcher.undo() is True
-    assert [t.id for t in dispatcher.trips] == ['T1']
-    assert dispatcher.undo() is True
-    assert dispatcher.trips == []
-    assert [r.id for r in dispatcher.queue] == ['R1', 'R2']
-    assert dispatcher.undo() is False
-    assert dispatcher.redo() is True
-    assert dispatcher.trips[0] is t1
-    assert dispatcher.redo() is True
-    assert dispatcher.trips[1] is t2
-    assert dispatcher.redo() is False
-
-
-def test_new_dispatch_invalidates_redo_and_does_not_reuse_trip_id(graph_for_dispatcher):
-    dispatcher = Dispatcher(graph_for_dispatcher, {
-        'D1': Driver('D1', 'An', 'N1'),
-        'D2': Driver('D2', 'Binh', 'N2'),
-    })
-    dispatcher.submit_request('N3', 'N4')
-    dispatcher.dispatch_next(FakeStrategy('D1'))
-    dispatcher.undo()
-    assert dispatcher.can_redo()
-    trip2 = dispatcher.dispatch_next(FakeStrategy('D2'))
-    assert trip2.id == 'T2'
-    assert dispatcher.can_redo() is False
-
-
-def test_redo_rejects_changed_head_without_losing_history(graph_for_dispatcher):
-    dispatcher = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1')})
-    dispatcher.submit_request('N3', 'N4')
-    dispatcher.dispatch_next(FakeStrategy())
-    dispatcher.undo()
-    dispatcher.submit_request('N2', 'N4')
-    dispatcher.queue.requeue_head(dispatcher.all_requests['R2'])
-    assert dispatcher.can_redo() is False
-    assert dispatcher.redo() is False
-    assert len(dispatcher.undo_manager.redo_stack) == 1
 
 
 def test_snapshot_is_independent_copy(graph_for_dispatcher):
@@ -455,19 +304,6 @@ def test_from_state_restores_queued_requests_locations_and_next_ids(graph_for_di
     assert dispatcher.add_driver('Eight', 'N2').id == 'D8'
     assert dispatcher.submit_request('N3', 'N4').id == 'R10'
     assert dispatcher.dispatch_next(FakeStrategy('D8')).id == 'T12'
-
-
-def test_export_import_retains_undo_queue_order(graph_for_dispatcher):
-    dispatcher = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1')})
-    dispatcher.submit_request('N3', 'N4')
-    dispatcher.submit_request('N2', 'N4')
-    dispatcher.dispatch_next(FakeStrategy())
-    assert dispatcher.undo()
-    state = dispatcher.export_state()
-    restored = Dispatcher.from_state(state)
-    assert [r.id for r in restored.queue] == ['R1', 'R2']
-    assert restored.undo() is False  # Undo history is kept in UI session, not saved in JSON.
-    assert [r.id for r in restored.export_state()['requests']] == ['R1', 'R2']
 
 
 @pytest.mark.parametrize('strategy_cls', [DijkstraPerDriver, ReverseDijkstra])
@@ -510,17 +346,16 @@ def test_failure_reasons(graph_for_dispatcher):
     assert d.dispatch_next(DijkstraPerDriver()) is None and d.last_failure == 'no_free_driver'
 
 
-def test_dispatch_all_and_stepwise_undo(graph_for_dispatcher):
+def test_dispatch_all(graph_for_dispatcher):
     d = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1'),
                                           'D2': Driver('D2', 'Binh', 'N2')})
     d.submit_request('N3', 'N4')
     d.submit_request('N2', 'N4')
     assert len(d.dispatch_all(ReverseDijkstra())) == 2
     assert d.last_failure == 'empty_queue'
-    assert d.undo() and d.undo() and not d.can_undo()
 
 
-def test_complete_trip_clears_history_and_busy_driver_cannot_move(graph_for_dispatcher):
+def test_busy_driver_cannot_move(graph_for_dispatcher):
     d = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1')})
     d.submit_request('N3', 'N4')
     d.submit_request('N2', 'N4')
@@ -528,7 +363,7 @@ def test_complete_trip_clears_history_and_busy_driver_cannot_move(graph_for_disp
     with pytest.raises(ValueError):
         d.update_driver('D1', node='N2')
     d.complete_trip(t1.id)
-    assert not d.can_undo() and not d.can_redo()
+    assert d.drivers['D1'].status == FREE
 
 
 def test_dispatcher_cancel_request(graph_for_dispatcher):
@@ -574,5 +409,118 @@ def test_dispatcher_ride_estimate(graph_for_dispatcher):
 
     # Điểm không có đường đi (đến đỉnh cô lập N5)
     assert d.ride_estimate("N1", "N5") is None
+
+
+# ------- cancel_trip tests -------
+
+def test_cancel_trip_success(graph_for_dispatcher):
+    dispatcher = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1')})
+    req = dispatcher.submit_request('N3', 'N4')
+    trip = dispatcher.dispatch_next(FakeStrategy('D1'))
+    assert trip is not None
+    assert trip.status == ASSIGNED
+    assert dispatcher.drivers['D1'].status == BUSY
+    assert req.status == ASSIGNED
+    assert len(dispatcher.queue) == 0
+
+    assert dispatcher.cancel_trip(trip.id) is True
+    assert trip.status == CANCELLED
+    assert dispatcher.drivers['D1'].status == FREE
+    assert dispatcher.drivers['D1'].node == 'N1'  # Giữ nguyên vị trí cũ của tài xế
+    assert req.status == CANCELLED
+    assert len(dispatcher.queue) == 0  # D1 = A: không quay lại hàng đợi
+    assert req.id in dispatcher.all_requests
+    assert dispatcher.all_requests[req.id].status == CANCELLED
+
+
+def test_cancel_trip_invalid_status_or_id(graph_for_dispatcher):
+    dispatcher = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1')})
+    # Hủy trip không tồn tại
+    assert dispatcher.cancel_trip('NON_EXISTENT') is False
+
+    req1 = dispatcher.submit_request('N3', 'N4')
+    t1 = dispatcher.dispatch_next(FakeStrategy('D1'))
+    assert dispatcher.complete_trip(t1.id) is True
+    assert t1.status == COMPLETED
+
+    # Hủy trip đã COMPLETED -> trả False và không đổi dữ liệu
+    assert dispatcher.cancel_trip(t1.id) is False
+    assert t1.status == COMPLETED
+    assert dispatcher.drivers['D1'].node == 'N4'
+
+    # Ghép chuyến khác và hủy thành công
+    req2 = dispatcher.submit_request('N3', 'N4')
+    t2 = dispatcher.dispatch_next(FakeStrategy('D1'))
+    assert dispatcher.cancel_trip(t2.id) is True
+    assert t2.status == CANCELLED
+
+    # Hủy lại trip đã CANCELLED -> trả False và không đổi gì
+    assert dispatcher.cancel_trip(t2.id) is False
+    assert t2.status == CANCELLED
+
+
+def test_complete_trip_on_cancelled_trip_returns_false(graph_for_dispatcher):
+    dispatcher = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1')})
+    dispatcher.submit_request('N3', 'N4')
+    t1 = dispatcher.dispatch_next(FakeStrategy('D1'))
+    assert dispatcher.cancel_trip(t1.id) is True
+    assert t1.status == CANCELLED
+
+    # Gọi complete_trip trên chuyến CANCELLED phải trả False
+    assert dispatcher.complete_trip(t1.id) is False
+    assert t1.status == CANCELLED
+    assert dispatcher.drivers['D1'].status == FREE
+    assert dispatcher.drivers['D1'].node == 'N1'
+
+
+def test_cancelled_driver_can_take_new_trip_without_id_clash(graph_for_dispatcher):
+    dispatcher = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1')})
+    dispatcher.submit_request('N3', 'N4')
+    t1 = dispatcher.dispatch_next(FakeStrategy('D1'))
+    assert t1.id == 'T1'
+    assert dispatcher.cancel_trip(t1.id) is True
+
+    # Tài xế D1 đã FREE, gửi yêu cầu mới và ghép chuyến
+    r2 = dispatcher.submit_request('N2', 'N4')
+    t2 = dispatcher.dispatch_next(FakeStrategy('D1'))
+    assert t2 is not None
+    assert t2.id == 'T2'  # ID mới tăng dần, không trùng T1
+    assert t2.driver_id == 'D1'
+    assert t2.request_id == r2.id
+    assert t2.status == ASSIGNED
+    assert dispatcher.drivers['D1'].status == BUSY
+
+
+def test_remove_driver_blocked_for_driver_with_cancelled_trip(graph_for_dispatcher):
+    dispatcher = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1')})
+    dispatcher.submit_request('N3', 'N4')
+    t1 = dispatcher.dispatch_next(FakeStrategy('D1'))
+    assert dispatcher.cancel_trip(t1.id) is True
+    assert dispatcher.drivers['D1'].status == FREE
+
+    # remove_driver vẫn bị chặn với tài xế có chuyến CANCELLED
+    with pytest.raises(ValueError):
+        dispatcher.remove_driver('D1')
+
+
+def test_export_from_state_preserves_cancelled_trip_and_request(graph_for_dispatcher):
+    dispatcher = Dispatcher(graph_for_dispatcher, {'D1': Driver('D1', 'An', 'N1')})
+    r1 = dispatcher.submit_request('N3', 'N4')
+    t1 = dispatcher.dispatch_next(FakeStrategy('D1'))
+    assert dispatcher.cancel_trip(t1.id) is True
+
+    r2 = dispatcher.submit_request('N2', 'N4')  # Vẫn QUEUED
+    state = dispatcher.export_state()
+
+    assert any(t.id == 'T1' and t.status == CANCELLED for t in state['trips'])
+    assert any(r.id == 'R1' and r.status == CANCELLED for r in state['requests'])
+    assert any(r.id == 'R2' and r.status == QUEUED for r in state['requests'])
+
+    restored = Dispatcher.from_state(state)
+    assert [r.id for r in restored.queue] == ['R2']  # R1 CANCELLED không vào queue
+    assert restored.all_requests['R1'].status == CANCELLED
+    assert restored.trips[0].id == 'T1'
+    assert restored.trips[0].status == CANCELLED
+    assert restored.drivers['D1'].status == FREE
 
 
