@@ -117,8 +117,9 @@ def node_labels() -> list[str]:
 
 
 def item_id(label: str) -> str:
-    """Tách ID từ nhãn hiển thị dạng "N3 – Cầu Rồng" / "D1 – An"."""
-    return label.split(" – ")[0]
+    """Tách ID từ nhãn hiển thị dạng "N3 – Cầu Rồng" / "D1 – An" / "R16 (N3 → N7)"."""
+    clean = label.split("(")[0].strip()
+    return clean.split(" – ")[0].strip()
 
 
 # ------------------------------------------------------------ thông báo & lưu trữ

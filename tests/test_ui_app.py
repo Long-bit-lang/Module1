@@ -1154,3 +1154,34 @@ def test_ui_seed_t2_assigned_shows_both_legs(real_app, tmp_path):
     infos = [i.value for i in real_app.info]
     assert not any("Chuyến này được tạo trước khi hệ thống lưu lộ trình đón" in i for i in infos)
 
+
+def test_cancel_queued_request_flow(app):
+    """Kiểm tra hủy yêu cầu trong hàng đợi (cancel_request) qua UI hoạt động đúng."""
+    from ui.session import item_id
+    assert item_id("R16 (N3 – Cầu Rồng → N7 – Bến xe)") == "R16"
+    assert item_id("R16 (N3 → N7)") == "R16"
+    assert item_id("N3 – Cầu Rồng") == "N3"
+
+    # Tạo yêu cầu mới
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+    queue = _d(app).queue_snapshot()
+    assert len(queue) == 1
+    req = queue[0]
+
+    # Chọn yêu cầu cần hủy trong selectbox
+    sel = next(s for s in app.selectbox if s.key == "cancel_req_select")
+    target_opt = next(o for o in sel.options if req.id in o)
+    sel.select(target_opt).run()
+
+    # Nhấn Hủy yêu cầu -> dialog xuất hiện -> nhấn Xác nhận hủy
+    app.button(key="btn_cancel_request").click().run()
+    app.button(key="btn_confirm_cancel_request").click().run()
+    assert not app.exception
+
+    # Kiểm tra hàng đợi và all_requests đã được xóa
+    assert len(_d(app).queue_snapshot()) == 0
+    assert req.id not in _d(app).all_requests
+

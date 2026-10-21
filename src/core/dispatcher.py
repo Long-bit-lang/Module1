@@ -270,7 +270,7 @@ class Dispatcher:
         - request.status = CANCELLED (request vẫn nằm trong all_requests, KHÔNG nằm trong hàng đợi).
         - Trả về True.
         """
-        trip = next((t for t in self.trips if t.id == trip_id), None)
+        trip = next((t for t in self.trips if t.id == trip_id or t.request_id == trip_id), None)
         if trip is None or trip.status != ASSIGNED:
             return False
         driver = self.drivers.get(trip.driver_id)

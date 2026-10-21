@@ -209,14 +209,14 @@ def _confirm_cancel_trip_dialog(trip_id: str) -> None:
     )
     c_yes, c_no = st.columns(2)
     with c_yes:
-        st.button(
+        if st.button(
             "Xác nhận hủy",
             key=f"btn_confirm_cancel_trip_{trip_id}",
-            on_click=_on_cancel_trip,
-            args=(trip_id,),
             type="primary",
             width="stretch",
-        )
+        ):
+            _on_cancel_trip(trip_id)
+            st.rerun()
     with c_no:
         if st.button("Bỏ qua", key=f"btn_dismiss_cancel_trip_{trip_id}", width="stretch"):
             st.session_state[f"show_cancel_trip_dialog_{trip_id}"] = False
