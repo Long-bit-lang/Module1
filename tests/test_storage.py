@@ -408,3 +408,206 @@ def test_save_all_interrupted_write_cleans_up_tmp_and_preserves_targets(
     # Nội dung 4 file chính thức vẫn nguyên vẹn 100%
     content_after = {f: (runtime_dir / f).read_text(encoding="utf-8") for f in JsonStorage.REQUIRED_FILES}
     assert content_before == content_after
+
+
+# =====================================================================
+# 6. KIỂM THỬ RÀNG BUỘC CONTRACT KHI GỌI SAVE_ALL (VALIDATION TESTS)
+# =====================================================================
+
+
+def test_save_all_not_a_dict_raises_storage_error(storage_dirs: tuple[Path, Path]) -> None:
+    """Ném StorageError khi state truyền vào save_all() không phải là dict."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    with pytest.raises(StorageError, match="phải là một dict"):
+        storage.save_all(["not", "a", "dict"])  # type: ignore
+
+
+def test_save_all_invalid_graph_or_locations_type_raises_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi graph hoặc locations sai kiểu dữ liệu."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    state = storage.load_all()
+
+    bad_state_graph = dict(state)
+    bad_state_graph["graph"] = "not_a_graph"
+    with pytest.raises(StorageError, match="phải là một instance của RoadGraph"):
+        storage.save_all(bad_state_graph)
+
+    bad_state_loc = dict(state)
+    bad_state_loc["locations"] = ["not_a_dict"]
+    with pytest.raises(StorageError, match="phải là một dict"):
+        storage.save_all(bad_state_loc)
+
+
+def test_save_all_items_not_instances_of_models_raises_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi các phần tử trong locations, drivers, requests, trips không phải instance của class tương ứng."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    state = storage.load_all()
+
+    # Location không phải Location instance
+    bad_loc_state = dict(state)
+    bad_loc_state["locations"] = dict(state["locations"])
+    bad_loc_state["locations"]["N1"] = {"id": "N1", "name": "Fake"}
+    with pytest.raises(StorageError, match="phải là instance của Location"):
+        storage.save_all(bad_loc_state)
+
+    # Driver không phải Driver instance
+    bad_driver_state = dict(state)
+    bad_driver_state["drivers"] = dict(state["drivers"])
+    bad_driver_state["drivers"]["D1"] = "not_a_driver"
+    with pytest.raises(StorageError, match="phải là instance của Driver"):
+        storage.save_all(bad_driver_state)
+
+    # Request không phải RideRequest instance
+    bad_req_state = dict(state)
+    bad_req_state["requests"] = list(state["requests"])
+    bad_req_state["requests"].append("not_a_request")
+    with pytest.raises(StorageError, match="phải là instance của RideRequest"):
+        storage.save_all(bad_req_state)
+
+    # Trip không phải Trip instance
+    bad_trip_state = dict(state)
+    bad_trip_state["trips"] = list(state["trips"])
+    bad_trip_state["trips"].append("not_a_trip")
+    with pytest.raises(StorageError, match="phải là instance của Trip"):
+        storage.save_all(bad_trip_state)
+
+
+
+def test_save_all_location_graph_out_of_sync_raises_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi đồ thị chứa đỉnh không có trong từ điển locations."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    state = storage.load_all()
+
+    state["graph"].add_node("N_UNNAMED")
+    with pytest.raises(StorageError, match="Location và graph không đồng bộ"):
+        storage.save_all(state)
+
+
+def test_save_all_driver_references_unknown_node_raises_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi tài xế trong state tham chiếu đến đỉnh không tồn tại."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    state = storage.load_all()
+
+    state["drivers"]["D_GHOST"] = Driver(id="D_GHOST", name="Ghost", node="N_UNKNOWN", status=FREE)
+    with pytest.raises(StorageError, match="tham chiếu đến đỉnh 'N_UNKNOWN' không tồn tại"):
+        storage.save_all(state)
+
+
+def test_save_all_duplicate_driver_id_in_list_raises_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi danh sách drivers truyền dạng list chứa ID trùng lặp."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    state = storage.load_all()
+
+    state["drivers"] = [
+        Driver(id="D1", name="An", node="N1", status=FREE),
+        Driver(id="D1", name="An Duplicate", node="N2", status=FREE),
+    ]
+    with pytest.raises(StorageError, match="Trùng lặp mã tài xế 'D1'"):
+        storage.save_all(state)
+
+
+def test_save_all_request_references_unknown_nodes_raises_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi yêu cầu có điểm đón hoặc điểm trả không tồn tại trên đồ thị."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    state = storage.load_all()
+
+    bad_req_pickup = RideRequest(id="R_BAD", pickup_node="N_UNKNOWN", dropoff_node="N2", status=QUEUED)
+    state["requests"].append(bad_req_pickup)
+    with pytest.raises(StorageError, match="có điểm đón 'N_UNKNOWN' không tồn tại"):
+        storage.save_all(state)
+
+    state["requests"].pop()
+    bad_req_dropoff = RideRequest(id="R_BAD2", pickup_node="N1", dropoff_node="N_UNKNOWN", status=QUEUED)
+    state["requests"].append(bad_req_dropoff)
+    with pytest.raises(StorageError, match="có điểm trả 'N_UNKNOWN' không tồn tại"):
+        storage.save_all(state)
+
+
+def test_save_all_trip_references_unknown_request_or_driver_raises_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi chuyến đi tham chiếu đến request_id hoặc driver_id không tồn tại."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    state = storage.load_all()
+
+    state["trips"].append(Trip(id="T_GHOST", request_id="R_UNKNOWN", driver_id="D1", eta=5.0, status=COMPLETED))
+    with pytest.raises(StorageError, match="tham chiếu đến request_id 'R_UNKNOWN' không tồn tại"):
+        storage.save_all(state)
+
+    state["trips"].pop()
+    state["trips"].append(Trip(id="T_GHOST", request_id="R1", driver_id="D_UNKNOWN", eta=5.0, status=COMPLETED))
+    with pytest.raises(StorageError, match="tham chiếu đến driver_id 'D_UNKNOWN' không tồn tại"):
+        storage.save_all(state)
+
+
+def test_save_all_duplicate_trip_id_raises_error(storage_dirs: tuple[Path, Path]) -> None:
+    """Ném StorageError khi có chuyến đi trùng mã trip.id."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    state = storage.load_all()
+
+    state["trips"].append(Trip(id="T1", request_id="R1", driver_id="D2", eta=5.0, status=COMPLETED))
+    with pytest.raises(StorageError, match="Trùng lặp mã chuyến đi 'T1'"):
+        storage.save_all(state)
+
+
+def test_save_all_business_consistency_busy_driver_without_trip_raises_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi tài xế trong state có status 'busy' nhưng không có trip nào 'assigned'."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    state = storage.load_all()
+
+    state["drivers"]["D1"].status = BUSY
+    with pytest.raises(StorageError, match="không có chuyến đi đang thực hiện"):
+        storage.save_all(state)
+
+
+def test_save_all_business_consistency_multiple_trips_same_driver_raises_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi 2 chuyến đi đang chạy (assigned) cùng gán cho 1 tài xế."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    state = storage.load_all()
+
+    state["requests"][1].status = ASSIGNED
+    state["trips"].append(Trip(id="T2", request_id="R2", driver_id="D2", eta=6.0, status=ASSIGNED))
+    with pytest.raises(StorageError, match="nhiều hơn một chuyến đi"):
+        storage.save_all(state)
+
+
+def test_save_all_business_consistency_assigned_request_without_trip_raises_error(
+    storage_dirs: tuple[Path, Path],
+) -> None:
+    """Ném StorageError khi yêu cầu có status 'assigned' nhưng không có trip nào trong lịch sử."""
+    seed_dir, runtime_dir = storage_dirs
+    storage = JsonStorage(seed_dir=seed_dir, runtime_dir=runtime_dir)
+    state = storage.load_all()
+
+    state["requests"].append(
+        RideRequest(id="R3", pickup_node="N1", dropoff_node="N2", status=ASSIGNED)
+    )
+    with pytest.raises(StorageError, match="không tìm thấy chuyến đi nào trong lịch sử chuyến"):
+        storage.save_all(state)
