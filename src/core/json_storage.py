@@ -235,7 +235,7 @@ class JsonStorage:
             if not isinstance(item, dict):
                 raise StorageError("Mỗi phần tử trong 'trips' của trips.json phải là một dict.")
             try:
-                t = Trip.from_dict(item)
+                trip = Trip.from_dict(item)
             except (KeyError, TypeError, ValueError) as exc:
                 raise StorageError(f"Dữ liệu chuyến đi không hợp lệ trong trips.json: {exc}") from exc
 
