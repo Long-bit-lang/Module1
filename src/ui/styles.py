@@ -116,6 +116,11 @@ html, body, [class*="css"] {
     color: #475569;
     border: 1px solid #CBD5E1;
 }
+.badge-cancelled {
+    background: #FEF2F2;
+    color: #991B1B;
+    border: 1px solid #FECACA;
+}
 
 /* ── 3. Hộp thông báo rỗng (Empty State) ───────────────────────────────────── */
 .empty-state-box {
@@ -652,6 +657,7 @@ div[data-testid="stButton"] button {
     padding: 0.2rem 0.6rem;
     border-radius: 6px;
     margin-bottom: 0.4rem;
+}
 /* ── 10. Tiêu đề trang & Chip thông số (Page header) ──────────────────────── */
 .page-header {
     background: #FFFFFF;
@@ -786,6 +792,58 @@ div[data-testid="stButton"] button {
 .anim-sep {
     color: #94A3B8;
     font-size: 0.8rem;
+}
+
+/* Badge trạng thái animation (Đang phát, Tạm dừng, Hoàn tất) - Nhóm Animation */
+.anim-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1.2;
+    transition: all 150ms ease;
+}
+.anim-status-playing {
+    background: #EFF6FF;
+    color: #1D4ED8;
+    border: 1px solid #BFDBFE;
+}
+.anim-status-paused {
+    background: #FFFBEB;
+    color: #B45309;
+    border: 1px solid #FDE68A;
+}
+.anim-status-completed {
+    background: #ECFDF5;
+    color: #047857;
+    border: 1px solid #A7F3D0;
+}
+
+/* Chấm nhấp nháy cho trạng thái Đang phát (chu kỳ 1.0s <= 1.2s) */
+@keyframes animPulseDot {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.25;
+        transform: scale(0.85);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+.anim-pulse-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #2563EB;
+    animation: animPulseDot 1.0s infinite ease-in-out;
 }
 </style>
 """

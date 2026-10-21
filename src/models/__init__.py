@@ -1,5 +1,5 @@
 from .base_entity import BaseEntity
-from .constants import ASSIGNED, BUSY, COMPLETED, FREE, QUEUED
+from .constants import ASSIGNED, BUSY, COMPLETED, FREE, QUEUED, CANCELLED
 from .driver import Driver
 from .location import Location
 from .ride_request import RideRequest
@@ -16,4 +16,5 @@ __all__ = [
     "Trip",
     "ASSIGNED",
     "COMPLETED",
+    "CANCELLED",
 ]

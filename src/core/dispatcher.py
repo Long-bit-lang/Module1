@@ -1,4 +1,4 @@
-"""Business coordinator: requests, drivers, trips and dispatch undo/redo.
+"""Business coordinator: requests, drivers, trips and trip cancellation.
 
 No file I/O here: JsonStorage and the UI are responsible for persistence.
 The public method signatures follow docs/CONTRACT.md.
@@ -8,7 +8,7 @@ from __future__ import annotations
 from copy import deepcopy
 from math import isfinite
 
-from models import ASSIGNED, BUSY, COMPLETED, FREE, QUEUED
+from models import ASSIGNED, BUSY, COMPLETED, FREE, QUEUED, CANCELLED
 from models.driver import Driver
 from models.location import Location
 from models.ride_request import RideRequest
@@ -16,7 +16,6 @@ from models.trip import Trip
 from .road_graph import RoadGraph
 from .strategies import MatchResult, MatchStrategy, shortest_path
 from .structures import RequestQueue
-from .undo_manager import DispatchAction, UndoManager
 
 
 EMPTY_QUEUE, NO_FREE_DRIVER, NO_ROUTE = "empty_queue", "no_free_driver", "no_route"
@@ -51,7 +50,6 @@ class Dispatcher:
         for request in self.all_requests.values():
             if request.status == QUEUED:
                 self.queue.enqueue(request)
-        self.undo_manager = UndoManager()
 
         # Optional information for UI; no change to CONTRACT signatures.
         self.last_match_result: MatchResult | None = None
@@ -111,18 +109,8 @@ class Dispatcher:
         # Discuss this extra guard with Long/Thang before final integration.
         if any(trip.driver_id == driver_id for trip in self.trips):
             raise ValueError(f'Tài xế {driver_id} đang được tham chiếu bởi lịch sử chuyến')
-        if any(
-            a.driver_id == driver_id
-            for a in self._history_actions()
-        ):
-            raise ValueError(f'Tài xế {driver_id} còn lịch sử Undo/Redo')
         del self.drivers[driver_id]
         return True
-
-    def _history_actions(self):
-        """Read stack contents without modifying them (used for safe deletion)."""
-        for stack in (self.undo_manager.undo_stack, self.undo_manager.redo_stack):
-            yield from stack
 
     def dispatch_next(self, strategy: MatchStrategy) -> Trip | None:
         self.last_match_result, self.last_failure = None, None
@@ -145,24 +133,81 @@ class Dispatcher:
             raise ValueError('Chiến lược trả về ETA không hợp lệ')
 
         driver = self.drivers[result.driver_id]
-        trip = Trip(f'T{self._next_trip_id}', request.id, driver.id, result.eta)
-        old_node = driver.node
+        pickup_path = list(result.path) if result.path else []
+        trip = Trip(
+            f'T{self._next_trip_id}',
+            request.id,
+            driver.id,
+            result.eta,
+            pickup_path=pickup_path,
+        )
         removed_request = self.queue.dequeue()
         if removed_request is not request:
             raise RuntimeError("Hàng đợi không đồng bộ với yêu cầu điều phối")
         driver.assign()
         request.status = ASSIGNED
         self.trips.append(trip)
-        self.undo_manager.record(
-            DispatchAction(
-                trip=trip,
-                driver_id=driver.id,
-                request=request,
-                previous_driver_node=old_node,
-            )
-        )
         self._next_trip_id += 1
         return trip
+
+    def trip_route(self, trip_id: str) -> dict | None:
+        """Truy xuất thông tin đầy đủ về lộ trình 2 chặng của một chuyến xe.
+
+        Trả về:
+            {
+                "pickup_path": list[str],
+                "ride_path": list[str],
+                "pickup_eta": float,
+                "ride_eta": float | None,
+                "pickup_known": bool,
+            }
+            hoặc None nếu không tìm thấy trip hoặc request.
+        """
+        trip = next((t for t in self.trips if t.id == trip_id), None)
+        if trip is None:
+            return None
+        request = self.all_requests.get(trip.request_id)
+        if request is None:
+            return None
+
+        # 1. Chặng chở khách (ride_path & ride_eta)
+        r_eta, r_path, _ = shortest_path(self.graph, request.pickup_node, request.dropoff_node)
+        if r_eta is not None and r_path:
+            ride_eta = float(r_eta)
+            ride_path = list(r_path)
+        else:
+            ride_eta = None
+            ride_path = []
+
+        # 2. Chặng đón khách (pickup_path & pickup_known)
+        if trip.pickup_path:
+            pickup_path = list(trip.pickup_path)
+            pickup_known = True
+        elif trip.status == ASSIGNED:
+            driver = self.drivers.get(trip.driver_id)
+            if driver is not None:
+                p_eta, p_path, _ = shortest_path(self.graph, driver.node, request.pickup_node)
+                if p_path:
+                    pickup_path = list(p_path)
+                    pickup_known = True
+                else:
+                    pickup_path = []
+                    pickup_known = False
+            else:
+                pickup_path = []
+                pickup_known = False
+        else:
+            pickup_path = []
+            pickup_known = False
+
+        return {
+            "pickup_path": pickup_path,
+            "ride_path": ride_path,
+            "pickup_eta": float(trip.eta),
+            "ride_eta": ride_eta,
+            "pickup_known": pickup_known,
+        }
+
 
     def dispatch_all(self, strategy: MatchStrategy) -> list[Trip]:
         trips: list[Trip] = []
@@ -205,67 +250,36 @@ class Dispatcher:
 
     def complete_trip(self, trip_id: str) -> bool:
         trip = next((trip for trip in self.trips if trip.id == trip_id), None)
-        if trip is None or trip.status == COMPLETED:
+        if trip is None or trip.status != ASSIGNED:
             return False
         driver = self.drivers[trip.driver_id]
         request = self.all_requests[trip.request_id]
         driver.node = request.dropoff_node
         driver.release()
         trip.status = COMPLETED
-        self.undo_manager.undo_stack.clear()
-        self.undo_manager.redo_stack.clear()
         return True
 
-    def _peek_action(self, stack) -> DispatchAction | None:
-        return stack.peek()
+    def cancel_trip(self, trip_id: str) -> bool:
+        """Hủy một chuyến xe đang ở trạng thái ASSIGNED.
 
-    def can_undo(self) -> bool:
-        action = self._peek_action(self.undo_manager.undo_stack)
-        # A completed trip cannot be 'uncompleted' by dispatch-only undo.
-        return action is not None and action.trip.status != COMPLETED
-
-    def can_redo(self) -> bool:
-        action = self._peek_action(self.undo_manager.redo_stack)
-        if action is None:
+        Quy tắc:
+        - Tìm trip theo ID; nếu không có hoặc status != ASSIGNED thì trả False và KHÔNG đổi gì.
+        - Kiểm tra tham chiếu: driver và request phải tồn tại trước khi đổi dữ liệu (all-or-nothing).
+        - trip.status = CANCELLED.
+        - driver.release() (không đổi node).
+        - request.status = CANCELLED (request vẫn nằm trong all_requests, KHÔNG nằm trong hàng đợi).
+        - Trả về True.
+        """
+        trip = next((t for t in self.trips if t.id == trip_id or t.request_id == trip_id), None)
+        if trip is None or trip.status != ASSIGNED:
             return False
-        driver = self.drivers.get(action.driver_id)
-        head = self.queue.peek()
-        return (
-            driver is not None
-            and driver.status == FREE
-            and head is not None
-            and head.id == action.request.id
-            and action.request.status == QUEUED
-            and not any(trip.id == action.trip.id for trip in self.trips)
-        )
-
-    def undo(self) -> bool:
-        if not self.can_undo():
+        driver = self.drivers.get(trip.driver_id)
+        request = self.all_requests.get(trip.request_id)
+        if driver is None or request is None:
             return False
-        action = self.undo_manager.undo()
-        if action is None:
-            raise RuntimeError("Không có thao tác nào trong undo_stack")
-        self.trips = [trip for trip in self.trips if trip.id != action.trip.id]
-        driver = self.drivers[action.driver_id]
+        trip.status = CANCELLED
         driver.release()
-        if action.previous_driver_node is not None:
-            driver.node = action.previous_driver_node
-        action.request.status = QUEUED
-        self.queue.requeue_head(action.request)
-        return True
-
-    def redo(self) -> bool:
-        if not self.can_redo():
-            return False
-        action = self.undo_manager.redo()
-        if action is None:
-            raise RuntimeError("Không có thao tác nào trong redo_stack")
-        request = self.queue.dequeue()
-        if request.id != action.request.id:
-            raise RuntimeError(f"Yêu cầu ở đầu hàng đợi ({request.id}) không khớp với redo action ({action.request.id})")
-        self.drivers[action.driver_id].assign()
-        action.request.status = ASSIGNED
-        self.trips.append(action.trip)
+        request.status = CANCELLED
         return True
 
     def queue_snapshot(self) -> list[RideRequest]:
@@ -295,7 +309,7 @@ class Dispatcher:
 
     def export_state(self) -> dict:
         # Put queued requests first in CURRENT FIFO order so load_all/from_state
-        # reconstructs the same queue (including requeue_head after Undo).
+        # reconstructs the same queue order.
         queued = list(self.queue)
         queued_ids = {request.id for request in queued}
         other_requests = [

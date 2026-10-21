@@ -41,12 +41,6 @@ class RequestQueue:
     def peek(self) -> RideRequest | None:
         return None if self._head is None else self._head.value
 
-    def requeue_head(self, request: RideRequest) -> None:
-        self._head = _Node(request, self._head)
-        if self._tail is None:
-            self._tail = self._head
-        self._size += 1
-
     def remove(self, request_id: str) -> bool:
         """Hủy/xóa một yêu cầu theo ID khỏi hàng đợi."""
         prev = None

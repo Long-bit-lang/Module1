@@ -14,9 +14,8 @@ EXPECTED = {
         "neighbors",
         "reversed",
     ],
-    "core.structures:RequestQueue": ["enqueue", "dequeue", "peek", "requeue_head", "remove", "__len__"],
+    "core.structures:RequestQueue": ["enqueue", "dequeue", "peek", "remove", "__len__"],
     "core.structures:Stack": ["push", "pop", "peek", "clear", "__len__"],
-    "core.undo_manager:UndoManager": ["record", "undo", "redo"],
     "core.dispatcher:Dispatcher": [
         "submit_request",
         "add_driver",
@@ -25,12 +24,9 @@ EXPECTED = {
         "dispatch_next",
         "dispatch_all",
         "cancel_request",
+        "cancel_trip",
         "ride_estimate",
         "complete_trip",
-        "can_undo",
-        "can_redo",
-        "undo",
-        "redo",
         "queue_snapshot",
         "trips_snapshot",
         "drivers_snapshot",
@@ -82,7 +78,7 @@ def test_strategies_registry():
 def test_models_export_status_constants():
     import models
 
-    for name in ("FREE", "BUSY", "QUEUED", "ASSIGNED", "COMPLETED"):
+    for name in ("FREE", "BUSY", "QUEUED", "ASSIGNED", "COMPLETED", "CANCELLED"):
         assert hasattr(models, name), name
 
 
@@ -92,10 +88,11 @@ def test_ride_request_has_status():
     assert RideRequest("R1", "N1", "N2").status == "queued"
 
 
-def test_dispatch_action_dataclass():
-    from core.undo_manager import DispatchAction
+def test_cancel_trip_signature():
+    from core.dispatcher import Dispatcher
 
-    assert {"trip", "driver_id", "request"} <= set(DispatchAction.__dataclass_fields__)
+    params = list(inspect.signature(Dispatcher.cancel_trip).parameters)
+    assert params == ["self", "trip_id"]
 
 
 def test_last_failure_values_are_lowercase():

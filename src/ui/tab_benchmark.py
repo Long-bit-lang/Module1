@@ -186,9 +186,9 @@ def render() -> None:
         title="Đối chuẩn thuật toán",
         subtitle="So sánh A1 và A2 về kết quả và hiệu năng",
         chips=[
-            ("**Xe rảnh**", f"{free} --- "),
-            ("**Số đỉnh**", f"{len(nodes)} --- "),
-            ("**Số cung**", f"{len(edges)} "),
+            ("**Xe rảnh**", f"{free}"),
+            ("**Số đỉnh**", f"{len(nodes)}"),
+            ("**Số cung**", f"{len(edges)}"),
         ],
     )
 

@@ -68,14 +68,14 @@ def _on_reload() -> None:
     ok, _ = S.perform(S.reload_from_disk)
     if ok:
         st.session_state[S.K_LAST] = None
-        S.flash("info", "Đã nạp lại dữ liệu từ đĩa runtime; lịch sử Undo/Redo đã được đặt lại.")
+        S.flash("info", "Đã nạp lại dữ liệu từ đĩa runtime thành công.")
 
 
 def _on_reset_seed() -> None:
     ok, _ = S.perform(S.reset_to_seed)
     if ok:
         st.session_state[S.K_LAST] = None
-        S.flash("success", "Đã khôi phục toàn bộ dữ liệu mẫu ban đầu (Seed); lịch sử Undo/Redo đã được làm mới.")
+        S.flash("success", "Đã khôi phục toàn bộ dữ liệu mẫu ban đầu (Seed) thành công.")
 
 
 @st.dialog("⚠️ Xác nhận xóa tài xế")
@@ -104,7 +104,7 @@ def _confirm_reset_seed_dialog() -> None:
         "- Xóa toàn bộ thay đổi dữ liệu trong thư mục `data/runtime/`.\n"
         "- Khôi phục lại 6 địa danh Đà Nẵng, 3 tài xế ban đầu (D1, D2 rảnh; D3 bận).\n"
         "- Khôi phục lại 2 yêu cầu đang chờ: R3 (đón tại N4) và R4 (đón tại N5).\n"
-        "- Làm mới toàn bộ lịch sử Undo/Redo và các chuyến xe đã chạy.\n\n"
+        "- Làm mới toàn bộ dữ liệu điều phối và các chuyến xe đã chạy.\n\n"
         "*Thích hợp khi bắt đầu phiên thuyết trình hoặc muốn chạy lại kịch bản từ đầu.*"
     )
     c1, c2 = st.columns(2)
@@ -175,9 +175,9 @@ def render() -> None:
         title="Quản lý dữ liệu",
         subtitle="Mạng lưới giao thông và đội ngũ tài xế",
         chips=[
-            ("**Số đỉnh**", f"{len(nodes)} --- "),
-            ("**Số cung**", f"{len(edges)} --- "),
-            ("**Xe rảnh**", f"{free_count} --- "),
+            ("**Số đỉnh**", f"{len(nodes)}"),
+            ("**Số cung**", f"{len(edges)}"),
+            ("**Xe rảnh**", f"{free_count}"),
             ("**Xe bận**", f"{busy_count}"),
         ],
     )
@@ -278,7 +278,7 @@ def render() -> None:
             "🔄 Tải lại dữ liệu từ runtime",
             on_click=_on_reload,
             key="btn_reload",
-            help="Nạp lại dữ liệu từ file trong data/runtime/ (bỏ các thay đổi chưa lưu; làm mới Undo/Redo).",
+            help="Nạp lại dữ liệu từ file trong data/runtime/ (bỏ các thay đổi chưa lưu).",
             width="stretch",
         )
     with c_btn2:

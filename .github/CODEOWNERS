@@ -13,10 +13,9 @@
 /tests/test_algorithms.py @Duy
 /tests/benchmark_algorithms.py @Duy @Long
 
-# Điều phối & Undo/Redo (TV3 - Thông)
+# Điều phối & Quản lý chuyến (TV3 - Thông)
 /src/core/dispatcher.py @Thong
 /src/core/structures.py @Thong
-/src/core/undo_manager.py @Thong
 /tests/test_dispatcher.py @Thong
 
 # Lưu trữ & Dữ liệu mẫu (TV4 - Thắng)

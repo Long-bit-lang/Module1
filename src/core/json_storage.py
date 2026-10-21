@@ -9,7 +9,18 @@ from pathlib import Path
 from typing import Any
 
 from core.road_graph import RoadGraph
-from models import ASSIGNED, BUSY, FREE, QUEUED, Driver, Location, RideRequest, Trip
+from models import (
+    ASSIGNED,
+    BUSY,
+    CANCELLED,
+    COMPLETED,
+    FREE,
+    QUEUED,
+    Driver,
+    Location,
+    RideRequest,
+    Trip,
+)
 
 _ROOT = Path(__file__).resolve().parents[2]
 
@@ -219,6 +230,7 @@ class JsonStorage:
         # 5. Chuyến đi
         trips: list[Trip] = []
         trip_ids: set[str] = set()
+        request_by_id = {req.id: req for req in requests}
         for item in trips_raw["trips"]:
             if not isinstance(item, dict):
                 raise StorageError("Mỗi phần tử trong 'trips' của trips.json phải là một dict.")
@@ -226,17 +238,83 @@ class JsonStorage:
                 t = Trip.from_dict(item)
             except (KeyError, TypeError, ValueError) as exc:
                 raise StorageError(f"Dữ liệu chuyến đi không hợp lệ trong trips.json: {exc}") from exc
-            if t.id in trip_ids:
-                raise StorageError(f"Trùng lặp mã chuyến đi '{t.id}' trong trips.json.")
-            if t.request_id not in request_ids:
-                raise StorageError(f"Chuyến đi '{t.id}' tham chiếu đến request_id '{t.request_id}' không tồn tại.")
-            if t.driver_id not in drivers:
-                raise StorageError(f"Chuyến đi '{t.id}' tham chiếu đến driver_id '{t.driver_id}' không tồn tại.")
-            trip_ids.add(t.id)
-            trips.append(t)
 
-        # 6. Ràng buộc trạng thái nghiệp vụ
-        self._validate_business_consistency(drivers, requests, trips)
+            if trip.id in trip_ids:
+                raise StorageError(f"Trùng lặp mã chuyến đi '{trip.id}' trong trips.json.")
+            if trip.request_id not in request_ids:
+                raise StorageError(
+                    f"Chuyến đi '{trip.id}' tham chiếu đến request_id '{trip.request_id}' không tồn tại."
+                )
+            if trip.driver_id not in drivers:
+                raise StorageError(
+                    f"Chuyến đi '{trip.id}' tham chiếu đến driver_id '{trip.driver_id}' không tồn tại."
+                )
+
+            if trip.pickup_path:
+                req = request_by_id[trip.request_id]
+                for node in trip.pickup_path:
+                    if not graph.has_node(node):
+                        raise StorageError(
+                            f"Lộ trình đón (pickup_path) của chuyến '{trip.id}' chứa đỉnh '{node}' không tồn tại trên đồ thị."
+                        )
+                if trip.pickup_path[-1] != req.pickup_node:
+                    raise StorageError(
+                        f"Đỉnh cuối trong lộ trình đón của chuyến '{trip.id}' ({trip.pickup_path[-1]}) không khớp với điểm đón của yêu cầu '{req.id}' ({req.pickup_node})."
+                    )
+                for u, v in zip(trip.pickup_path, trip.pickup_path[1:]):
+                    neighbors = [nbr for nbr, _ in graph.neighbors(u)]
+                    if v not in neighbors:
+                        raise StorageError(
+                            f"Lộ trình đón của chuyến '{trip.id}' chứa đoạn nối ({u} -> {v}) không phải là cạnh có thật trên đồ thị."
+                        )
+
+            trip_ids.add(trip.id)
+            trips.append(trip)
+
+        # 6. Kiểm tra tính nhất quán trạng thái nghiệp vụ giữa Drivers, Requests và Trips
+        active_trips = [t for t in trips if t.status == ASSIGNED]
+        active_driver_ids: set[str] = set()
+        active_request_ids: set[str] = set()
+
+        for t in active_trips:
+            if t.driver_id in active_driver_ids:
+                raise StorageError(
+                    f"Tài xế '{t.driver_id}' đang được gán cho nhiều hơn một chuyến đi chưa hoàn thành."
+                )
+            if t.request_id in active_request_ids:
+                raise StorageError(
+                    f"Yêu cầu '{t.request_id}' đang được gán cho nhiều hơn một chuyến đi chưa hoàn thành."
+                )
+            active_driver_ids.add(t.driver_id)
+            active_request_ids.add(t.request_id)
+
+        for driver in drivers.values():
+            if driver.status == BUSY and driver.id not in active_driver_ids:
+                raise StorageError(
+                    f"Tài xế '{driver.id}' có trạng thái '{driver.status}' nhưng không có chuyến đi đang thực hiện ({ASSIGNED})."
+                )
+            if driver.status == FREE and driver.id in active_driver_ids:
+                raise StorageError(
+                    f"Tài xế '{driver.id}' có trạng thái '{driver.status}' nhưng đang được gán cho chuyến đi chưa hoàn thành."
+                )
+
+        all_trip_request_ids = {t.request_id for t in trips}
+        assigned_or_completed_trip_req_ids = {
+            t.request_id for t in trips if t.status in (ASSIGNED, COMPLETED)
+        }
+        for req in requests:
+            if req.status == ASSIGNED and req.id not in all_trip_request_ids:
+                raise StorageError(
+                    f"Yêu cầu '{req.id}' có trạng thái '{req.status}' nhưng không tìm thấy chuyến đi nào trong lịch sử chuyến."
+                )
+            if req.status == QUEUED and req.id in active_request_ids:
+                raise StorageError(
+                    f"Yêu cầu '{req.id}' có trạng thái '{req.status}' nhưng đang được gán cho một chuyến đi chưa hoàn thành ({ASSIGNED})."
+                )
+            if req.status == CANCELLED and req.id in assigned_or_completed_trip_req_ids:
+                raise StorageError(
+                    f"Yêu cầu '{req.id}' có trạng thái '{req.status}' nhưng lại được gắn với chuyến đi đang thực hiện ({ASSIGNED}) hoặc đã hoàn thành ({COMPLETED})."
+                )
 
         return {
             "graph": graph,

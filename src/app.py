@@ -2,10 +2,20 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
+
+# Đảm bảo thư mục 'src' luôn có trong sys.path để import models, core, ui thành công trên mọi môi trường
+_SRC = Path(__file__).resolve().parent
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+_ROOT = _SRC.parent
+if str(_ROOT) not in sys.path:
+    sys.path.append(str(_ROOT))
 
 import streamlit as st
 
+from models import CANCELLED
 from ui import session, tab_benchmark, tab_data, tab_dispatch
 from ui.styles import CUSTOM_CSS
 
@@ -36,7 +46,7 @@ except Exception as exc:
     st.stop()
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
-NAV_PAGES = ["Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán"]
+NAV_PAGES = ["Điều phối chuyến", "Quản lý dữ liệu", "Đối chuẩn thuật toán"]
 
 with st.sidebar:
     st.markdown("### **Hệ thống Điều phối Đặt xe Thông minh**")
@@ -58,14 +68,20 @@ with st.sidebar:
         st.session_state["panel_open"] = not st.session_state.get("panel_open", True)
         st.rerun()
 
+    try:
+        cancelled_count = sum(1 for t in session.dispatcher().trips_snapshot() if t.status == CANCELLED)
+        st.caption(f"⛔ Số chuyến đã hủy: **{cancelled_count}**")
+    except Exception:
+        pass
+
 # ── Flash messages (ngay trước nội dung trang chính) ──────────────────────────
 session.render_flash()
 
 # ── Render nội dung trang được chọn (A1: Bỏ st.tabs, chỉ gọi trang được chọn) ─
-if current_page == "Quản lý dữ liệu":
-    tab_data.render()
-elif current_page == "Điều phối chuyến":
+if current_page == "Điều phối chuyến":
     tab_dispatch.render()
+elif current_page == "Quản lý dữ liệu":
+    tab_data.render()
 else:
     tab_benchmark.render()
 

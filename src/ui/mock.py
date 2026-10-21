@@ -6,11 +6,11 @@ trường RIDE_DISPATCH_BACKEND=mock). KHÔNG phải nơi chứa logic nghiệp 
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from core.road_graph import RoadGraph
 from core.strategies import STRATEGIES, MatchResult, shortest_path
-from models import ASSIGNED, BUSY, COMPLETED, FREE, QUEUED
+from models import ASSIGNED, BUSY, CANCELLED, COMPLETED, FREE, QUEUED
 
 
 # ----------------------------------------------------------------- thực thể giả
@@ -37,6 +37,13 @@ class MockTrip:
     driver_id: str
     eta: float
     status: str = ASSIGNED
+    pickup_path: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.pickup_path is None:
+            self.pickup_path = []
+        else:
+            self.pickup_path = list(self.pickup_path)
 
 
 # ----------------------------------------------------------------- bộ điều phối giả
@@ -48,8 +55,6 @@ class FakeDispatcher:
         self.trips: list[MockTrip] = []
         self.all_requests: dict[str, MockRequest] = {}
         self.queue: list[MockRequest] = []
-        self._undo: list = []
-        self._redo: list = []
         self._seq = {"R": 0, "T": 0, "D": len(drivers)}
         self.last_match_result: MatchResult | None = None
         self.last_failure: str | None = None
@@ -127,10 +132,9 @@ class FakeDispatcher:
         self.queue.pop(0)
         req.status = ASSIGNED
         self.drivers[res.driver_id].status = BUSY
-        trip = MockTrip(self._new_id("T"), req.id, res.driver_id, res.eta)
+        path_list = list(res.path) if res.path else []
+        trip = MockTrip(self._new_id("T"), req.id, res.driver_id, res.eta, pickup_path=path_list)
         self.trips.append(trip)
-        self._undo.append((trip, res.driver_id, req))
-        self._redo.clear()
         return trip
 
     def dispatch_all(self, strategy) -> list[MockTrip]:
@@ -138,6 +142,43 @@ class FakeDispatcher:
         while (trip := self.dispatch_next(strategy)) is not None:
             trips.append(trip)
         return trips
+
+    def trip_route(self, trip_id: str) -> dict | None:
+        trip = next((t for t in self.trips if t.id == trip_id), None)
+        if trip is None:
+            return None
+        req = self.all_requests.get(trip.request_id)
+        if req is None:
+            return None
+
+        ride_eta, ride_path, _ = shortest_path(self.graph, req.pickup_node, req.dropoff_node)
+        if ride_eta is None:
+            ride_path = []
+            ride_eta = None
+
+        if trip.pickup_path:
+            pickup_path = list(trip.pickup_path)
+            pickup_known = True
+        elif trip.status == ASSIGNED:
+            drv = self.drivers.get(trip.driver_id)
+            if drv is not None:
+                p_eta, p_path, _ = shortest_path(self.graph, drv.node, req.pickup_node)
+                pickup_path = p_path if p_path is not None else []
+                pickup_known = True
+            else:
+                pickup_path = []
+                pickup_known = False
+        else:
+            pickup_path = []
+            pickup_known = False
+
+        return {
+            "pickup_path": pickup_path,
+            "ride_path": ride_path,
+            "pickup_eta": float(trip.eta),
+            "ride_eta": ride_eta,
+            "pickup_known": pickup_known,
+        }
 
     def cancel_request(self, request_id: str) -> bool:
         req = self.all_requests.get(request_id)
@@ -166,41 +207,27 @@ class FakeDispatcher:
         trip = next((t for t in self.trips if t.id == trip_id), None)
         if trip is None or trip.status != ASSIGNED:
             return False
+        drv = self.drivers.get(trip.driver_id)
+        req = self.all_requests.get(trip.request_id)
+        if drv is None or req is None:
+            return False
         trip.status = COMPLETED
-        drv = self.drivers[trip.driver_id]
         drv.status = FREE
-        drv.node = self.all_requests[trip.request_id].dropoff_node
-        self._undo.clear()
-        self._redo.clear()
+        drv.node = req.dropoff_node
         return True
 
-    # --- undo / redo
-    def can_undo(self) -> bool:
-        return bool(self._undo)
-
-    def can_redo(self) -> bool:
-        return bool(self._redo)
-
-    def undo(self) -> bool:
-        if not self._undo:
+    def cancel_trip(self, trip_id: str) -> bool:
+        trip = next((t for t in self.trips if t.id == trip_id), None)
+        if trip is None or trip.status != ASSIGNED:
             return False
-        trip, driver_id, req = self._undo.pop()
-        self.trips.remove(trip)
-        self.drivers[driver_id].status = FREE
-        req.status = QUEUED
-        self.queue.insert(0, req)
-        self._redo.append((trip, driver_id, req))
-        return True
-
-    def redo(self) -> bool:
-        if not self._redo:
+        drv = self.drivers.get(trip.driver_id)
+        req = self.all_requests.get(trip.request_id)
+        if drv is None or req is None:
             return False
-        trip, driver_id, req = self._redo.pop()
-        self.queue.remove(req)
-        req.status = ASSIGNED
-        self.drivers[driver_id].status = BUSY
-        self.trips.append(trip)
-        self._undo.append((trip, driver_id, req))
+        trip.status = CANCELLED
+        drv.status = FREE
+        req.status = CANCELLED
+        self.queue = [r for r in self.queue if r.id != req.id]
         return True
 
     # --- snapshot & trạng thái

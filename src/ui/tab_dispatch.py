@@ -1,4 +1,4 @@
-"""TV5 - Tab "Điều phối chuyến": yêu cầu, hàng đợi FIFO, điều phối, Undo/Redo, quản lý chuyến."""
+"""TV5 - Tab "Điều phối chuyến": yêu cầu, hàng đợi FIFO, điều phối, quản lý chuyến."""
 from __future__ import annotations
 
 import html
@@ -9,7 +9,7 @@ import streamlit as st
 
 from . import session as S
 from .components import get_status_badge_html, page_header, render_empty_state, render_route_breadcrumb
-from .constants import ASSIGNED, COMPLETED, FREE, status_label
+from .constants import ASSIGNED, CANCELLED, COMPLETED, FREE, status_label
 
 _REASON = {
     "empty_queue": "Hàng đợi yêu cầu đang trống. Vui lòng tạo yêu cầu đặt xe mới trước khi ghép chuyến.",
@@ -55,30 +55,6 @@ def _on_dispatch_all() -> None:
         "success" if trips else "warning",
         f"Đã ghép {len(trips)} chuyến. " + (_REASON.get(why, "") if why != "empty_queue" else ""),
     )
-
-
-def _on_undo() -> None:
-    ok, done = S.perform(lambda: S.dispatcher().undo())
-    if ok:
-        if done and st.session_state.get(S.K_LAST):
-            st.session_state[S.K_LAST]["status_tag"] = "Đã hoàn tác"
-        st.session_state["anim_playing"] = False
-        st.session_state["anim_step"] = 0
-        S.flash(
-            "success" if done else "warning",
-            "Đã hoàn tác lần điều phối gần nhất: yêu cầu đã quay lại đầu hàng đợi FIFO."
-            if done
-            else "Không có gì để hoàn tác.",
-        )
-
-
-def _on_redo() -> None:
-    ok, done = S.perform(lambda: S.dispatcher().redo())
-    if ok:
-        S.flash(
-            "success" if done else "warning",
-            "Đã làm lại lần điều phối vừa hoàn tác." if done else "Không có gì để làm lại.",
-        )
 
 
 def _on_cancel_request() -> None:
@@ -193,10 +169,9 @@ def _render_last_result() -> None:
     status_tag = last.get("status_tag", "Đang chạy")
 
     badge_map = {
-        "Đã hoàn tác": "badge-busy",
         "Chuyến đã hoàn thành": "badge-completed",
+        "Chuyến đã hủy": "badge-cancelled",
         "Đang chạy": "badge-assigned",
-        "Đã làm lại (Redo)": "badge-assigned",
     }
     badge_cls = badge_map.get(status_tag, "badge-default")
     status_badge_html = f'<span class="badge-status {badge_cls}">{html.escape(status_tag)}</span>'
@@ -236,9 +211,16 @@ def _render_last_result() -> None:
 
 def _render_map(d, queue, drivers) -> None:
     from .components import (
-        build_animation_timeline,
+        AnimationTick,
+        build_animation_ticks,
         render_animation_badge,
+        render_animation_status_badge,
         render_graph_with_zoom,
+    )
+    from .constants import (
+        ANIM_STATUS_COMPLETED,
+        ANIM_STATUS_PAUSED,
+        ANIM_STATUS_PLAYING,
     )
     from .graph_view import build_dot
 
@@ -247,35 +229,27 @@ def _render_map(d, queue, drivers) -> None:
     last = st.session_state.get(S.K_LAST)
     trips = d.trips_snapshot()
 
-    # 1. Kiểm tra trạng thái hoàn tác của chuyến vừa ghép gần nhất
-    is_last_undone = bool(last and last.get("status_tag") == "Đã hoàn tác")
-
-    # 2. Xây dựng danh sách chuyến có thể phát lại
+    # 1. Xây dựng danh sách chuyến có thể phát lại / xem lại lộ trình
     trip_options = []
     trip_map = {}
 
-    if last and last.get("trip") and not is_last_undone and not last.get("failed"):
+    if last and last.get("trip") and not last.get("failed"):
         last_trip = last.get("trip")
-        if last_trip:
-            lbl_last = f"Chuyến vừa ghép: {last_trip.id} (Xe {last_trip.driver_id} ↔ Khách {last_trip.request_id})"
-            trip_options.append(lbl_last)
-            trip_map[lbl_last] = ("last", last)
+        lbl_last = f"Chuyến vừa ghép: {last_trip.id} (Xe {last_trip.driver_id} ↔ Khách {last_trip.request_id})"
+        trip_options.append(lbl_last)
+        trip_map[lbl_last] = ("last", last_trip.id)
 
     for t in reversed(trips):
-        last_t = last.get("trip") if (last and not is_last_undone) else None
+        last_t = last.get("trip") if (last and not last.get("failed")) else None
         if last_t and t.id == last_t.id:
             continue
         lbl_t = f"Lịch sử: Chuyến {t.id} (Xe {t.driver_id} ↔ Khách {t.request_id})"
         trip_options.append(lbl_t)
-        trip_map[lbl_t] = ("history", t)
+        trip_map[lbl_t] = ("history", t.id)
 
-    # 3. Xử lý trường hợp vừa Undo
-    if is_last_undone:
-        st.info("ℹ️ Chuyến xe đã hoàn tác. Vui lòng ghép chuyến mới để phát lại lộ trình.")
-
-    # 4. Xác định chuyến được chọn để phát lại
+    # 4. Xác định chuyến được chọn để phát lại / xem lộ trình
     selected_type = None
-    selected_data = None
+    target_id = None
     if trip_options:
         if len(trip_options) > 1:
             sel_trip_key = st.selectbox(
@@ -283,24 +257,19 @@ def _render_map(d, queue, drivers) -> None:
                 options=trip_options,
                 index=0,
                 key="anim_trip_select",
-                help="Chọn chuyến vừa ghép (gồm chặng đón + chở) hoặc chuyến trong lịch sử (chặng chở)",
+                help="Chọn chuyến vừa ghép hoặc chuyến trong lịch sử để xem lại lộ trình hai chặng",
             )
-            selected_type, selected_data = trip_map.get(sel_trip_key, (None, None))
+            selected_type, target_id = trip_map.get(sel_trip_key, (None, None))
         else:
-            selected_type, selected_data = trip_map[trip_options[0]]
+            selected_type, target_id = trip_map[trip_options[0]]
 
     # 5. Reset bước nếu đổi chuyến phát lại
-    target_id = None
-    if selected_type == "last" and selected_data and selected_data.get("trip"):
-        target_id = selected_data["trip"].id
-    elif selected_type == "history" and selected_data:
-        target_id = selected_data.id
-
     if st.session_state.get("_anim_target_id") != target_id:
         st.session_state["_anim_target_id"] = target_id
         st.session_state["anim_step"] = 0
         st.session_state["anim_playing"] = False
         st.session_state["anim_just_played"] = False
+        st.session_state["_anim_timeline_cache_key"] = None
 
     # 6. Tự động phát sau khi ghép (anim_auto)
     if selected_type == "last" and st.session_state.get("anim_auto", False):
@@ -310,36 +279,48 @@ def _render_map(d, queue, drivers) -> None:
             st.session_state["anim_playing"] = True
             st.session_state["anim_just_played"] = True
 
-    # 7. Xây dựng lộ trình (timeline)
-    pickup_path = []
-    ride_path = []
-    route_note = "Chưa có lộ trình để hiển thị."
+    # 7. Xây dựng lộ trình dùng chung cho MỌI chuyến qua dispatcher.trip_route
+    pickup_path: list[str] = []
+    ride_path: list[str] = []
+    pickup_eta: float = 0.0
+    ride_eta: float | None = None
+    pickup_known: bool = True
+    route_note: str = "Chưa có lộ trình để hiển thị."
+    route_info: dict | None = None
 
-    if selected_type == "last" and selected_data:
-        res = selected_data.get("result")
-        if res and res.path:
-            pickup_path = list(res.path)
-        last_t = selected_data.get("trip")
-        req_id = last_t.request_id if last_t else None
-        est = d.ride_estimate(req_id) if (req_id and hasattr(d, "ride_estimate")) else None
-        if est and est[1]:
-            ride_path = list(est[1])
-            route_note = (
-                f"Xanh lá: xe đến điểm đón ({res.eta:g} phút). "
-                f"Cam: chở khách đến điểm trả ({est[0]:g} phút)."
-            ) if res else "Lộ trình chuyến vừa ghép."
+    selected_trip = None
+    if target_id:
+        selected_trip = next((t for t in trips if t.id == target_id), None)
+        if selected_trip is None and last and last.get("trip") and last["trip"].id == target_id:
+            selected_trip = last["trip"]
+
+    is_cancelled = False
+    if selected_trip and selected_trip.status == CANCELLED:
+        is_cancelled = True
+    elif last and last.get("trip") and last["trip"].id == target_id and last.get("status_tag") == "Chuyến đã hủy":
+        is_cancelled = True
+
+    if target_id:
+        if hasattr(d, "trip_route"):
+            route_info = d.trip_route(target_id)
+        if route_info is not None:
+            pickup_path = list(route_info.get("pickup_path") or [])
+            ride_path = list(route_info.get("ride_path") or [])
+            pickup_eta = float(route_info.get("pickup_eta", 0.0))
+            ride_eta = route_info.get("ride_eta")
+            pickup_known = bool(route_info.get("pickup_known", True))
+
+            notes = []
+            if pickup_path:
+                notes.append(f"Xanh lá: xe đến điểm đón ({pickup_eta:g} phút)")
+            if ride_path:
+                if ride_eta is not None:
+                    notes.append(f"Cam nét đứt: chở khách đến điểm trả ({ride_eta:g} phút)")
+                else:
+                    notes.append("Cam nét đứt: chở khách đến điểm trả")
+            route_note = ". ".join(notes) + ("." if notes else "")
         else:
-            route_note = f"Xanh lá: xe đến điểm đón ({res.eta:g} phút)." if res else "Lộ trình chuyến vừa ghép."
-    elif selected_type == "history":
-        est = d.ride_estimate(selected_data.request_id) if hasattr(d, "ride_estimate") else None
-        if est and est[1]:
-            ride_path = list(est[1])
-            route_note = (
-                f"Lịch sử chuyến {selected_data.id}: chỉ phát lại chặng chở khách "
-                f"({est[0]:g} phút) vì Trip hiện chưa lưu điểm xuất phát của tài xế."
-            )
-        else:
-            route_note = "Lịch sử chuyến: không tìm thấy lộ trình."
+            route_note = f"Không tìm thấy dữ liệu lộ trình cho chuyến {target_id}."
     elif queue:
         free = {x.id: x.node for x in drivers.values() if x.status == FREE}
         name = st.session_state.get("strategy_name") or next(iter(S.strategies()))
@@ -351,52 +332,104 @@ def _render_map(d, queue, drivers) -> None:
                     f"{preview_res.driver_id} nhận, ETA {preview_res.eta:g} phút."
                 )
 
-    speed_label = st.session_state.get("anim_speed", "1x")
-    speed_mult = {"0.5x": 0.5, "1x": 1.0, "2x": 2.0}.get(speed_label, 1.0)
+    routes: list[tuple[list[str], str, str]] = []
+    if pickup_path:
+        routes.append((pickup_path, "#16a34a", "solid"))
+    if ride_path:
+        routes.append((ride_path, "#ea580c", "dashed"))
+    driver_start_node = pickup_path[0] if pickup_path else None
 
-    timeline = build_animation_timeline(
-        pickup_path=pickup_path,
-        ride_path=ride_path,
-        graph_edges=d.graph.edges(),
-        node_label_fn=S.node_label,
-        speed_mult=speed_mult,
-    )
-    total_steps = len(timeline)
+    speed_label = st.session_state.get("anim_speed", "2x")
+    speed_mult = {"1x": 1.0, "2x": 2.0, "4x": 4.0}.get(speed_label, 2.0)
+    avg_render_time = st.session_state.get("anim_avg_render_time", 0.0)
+
+    # Tiền kết xuất và lưu cache chuỗi DOT cho từng tick
+    if is_cancelled:
+        timeline = []
+    else:
+        route_signature = f"{target_id}_p{len(pickup_path)}_r{len(ride_path)}_{','.join(pickup_path)}_{','.join(ride_path)}_{speed_label}"
+        drivers_sig = f"{len(drivers)}_{sum(1 for drv in drivers.values() if drv.status == FREE)}"
+        timeline_cache_key = f"{route_signature}_{drivers_sig}"
+
+        if (
+            st.session_state.get("_anim_timeline_cache_key") != timeline_cache_key
+            or "_anim_cached_timeline" not in st.session_state
+        ):
+            import time
+            _t0 = time.perf_counter()
+            timeline = build_animation_ticks(
+                pickup_path=pickup_path,
+                ride_path=ride_path,
+                graph_edges=d.graph.edges(),
+                node_label_fn=S.node_label,
+                speed_mult=speed_mult,
+                drivers=drivers,
+                queue=queue,
+                nodes=d.graph.nodes(),
+                precompute_dots=True,
+                avg_render_time=avg_render_time,
+            )
+            _render_cost = time.perf_counter() - _t0
+            st.session_state["_anim_cached_timeline"] = timeline
+            st.session_state["_anim_timeline_cache_key"] = timeline_cache_key
+            st.session_state["_anim_last_render_cost"] = _render_cost
+
+            # Lưu thời gian render trung bình đo được vào session_state (YÊU CẦU 5)
+            measured_render = getattr(timeline, "avg_render_time", 0.0) or getattr(timeline, "_avg_render_time", 0.0)
+            if measured_render > 0:
+                st.session_state["anim_avg_render_time"] = measured_render
+                st.session_state["anim_render_time"] = measured_render
+        else:
+            timeline = st.session_state["_anim_cached_timeline"]
+
+    total_ticks = timeline[-1].total_ticks if timeline else 0
+    total_frames = len(timeline)
+    max_step = max(0, total_frames - 1)
 
     # 8. Tính toán delay động cho run_every của st.fragment
     is_playing = st.session_state.get("anim_playing", False)
     cur_step = st.session_state.get("anim_step", 0)
 
-    # Hết bước thì tự dừng
-    if is_playing and total_steps > 0 and cur_step >= total_steps - 1:
-        is_playing = False
-        st.session_state["anim_playing"] = False
-
-    if is_playing and total_steps > 0:
-        run_every_delay = timeline[min(cur_step, total_steps - 1)].step_delay
+    if is_playing and total_frames > 0:
+        run_every_delay = timeline[min(cur_step, total_frames - 1)].tick_delay
     else:
         run_every_delay = None
 
     # 9. Callback functions cho các nút điều khiển
     def on_play() -> None:
         cur = st.session_state.get("anim_step", 0)
-        if cur >= total_steps - 1:
+        if cur >= max_step:
             st.session_state["anim_step"] = 0
+            st.session_state["_current_anim_step"] = 0
         st.session_state["anim_playing"] = True
         st.session_state["anim_just_played"] = True
+        st.rerun()
 
     def on_pause() -> None:
         st.session_state["anim_playing"] = False
         st.session_state["anim_just_played"] = False
+        st.session_state["_current_anim_step"] = st.session_state.get("anim_step", 0)
+        st.rerun()
 
     def on_restart() -> None:
         st.session_state["anim_step"] = 0
+        st.session_state["_current_anim_step"] = 0
         st.session_state["anim_playing"] = True
         st.session_state["anim_just_played"] = True
+        st.rerun()
+
+    def on_skip() -> None:
+        st.session_state["anim_step"] = max_step
+        st.session_state["_current_anim_step"] = max_step
+        st.session_state["anim_playing"] = False
+        st.session_state["anim_just_played"] = False
+        st.rerun()
 
     def on_step_change() -> None:
         st.session_state["anim_playing"] = False
         st.session_state["anim_just_played"] = False
+        st.session_state["_current_anim_step"] = st.session_state.get("anim_step", 0)
+        st.rerun()
 
     # 10. Fragment hiển thị bản đồ và bộ điều khiển
     @st.fragment(run_every=run_every_delay)
@@ -404,33 +437,59 @@ def _render_map(d, queue, drivers) -> None:
         # Xử lý tick đồng hồ chuyển bước
         if st.session_state.get("anim_playing", False):
             if st.session_state.get("anim_just_played", False):
+                # Vừa bấm Phát hoặc Phát lại: hiển thị ngay khung hình hiện tại
                 st.session_state["anim_just_played"] = False
+                st.session_state["_current_anim_step"] = st.session_state.get("anim_step", 0)
             else:
-                s = st.session_state.get("anim_step", 0)
-                if s < total_steps - 1:
-                    st.session_state["anim_step"] = s + 1
-                else:
-                    st.session_state["anim_playing"] = False
+                last_s = st.session_state.get("_current_anim_step", st.session_state.get("anim_step", 0))
+                client_s = st.session_state.get("anim_step", last_s)
+                if abs(client_s - last_s) > 1:
+                    last_s = client_s
 
-        playing_now = st.session_state.get("anim_playing", False)
+                if last_s < max_step:
+                    next_s = last_s + 1
+                    st.session_state["anim_step"] = next_s
+                    st.session_state["_current_anim_step"] = next_s
+                else:
+                    # Khi đến cuối lộ trình: tự động dừng theo đúng yêu cầu
+                    st.session_state["anim_playing"] = False
+                    st.session_state["anim_step"] = max_step
+                    st.session_state["_current_anim_step"] = max_step
+                    st.rerun()
+
+        # Cập nhật anim_step TRƯỚC KHI tạo widget slider
         if "anim_step" not in st.session_state:
             st.session_state["anim_step"] = 0
-        step_idx = min(max(0, st.session_state.get("anim_step", 0)), max(0, total_steps - 1))
+        step_idx = min(max(0, st.session_state.get("anim_step", 0)), max_step)
         st.session_state["anim_step"] = step_idx
 
-        # Bảng điều khiển animation (chỉ hiển thị khi có chuyến và không bị hoàn tác)
-        if total_steps > 0 and not is_last_undone:
+        playing_now = st.session_state.get("anim_playing", False)
+        if not playing_now and max_step > 0 and step_idx >= max_step:
+            anim_status = ANIM_STATUS_COMPLETED
+        elif playing_now:
+            anim_status = ANIM_STATUS_PLAYING
+        else:
+            anim_status = ANIM_STATUS_PAUSED
+
+        current_tick_info = timeline[step_idx] if (timeline and step_idx < len(timeline)) else None
+
+        # Cập nhật giá trị tiến độ tổng cho anim_progress
+        if current_tick_info:
+            st.session_state["anim_progress"] = current_tick_info.progress_pct
+
+        # Bảng điều khiển animation (chỉ hiển thị khi có chuyến hợp lệ)
+        if total_frames > 0:
             with st.container(key="anim_controls_box", border=True):
-                c1, c2, c3, c4, c5 = st.columns([1.1, 1.2, 1.2, 1.3, 2.5], vertical_alignment="center")
+                c1, c2, c3, c_skip, c4, c5 = st.columns([1.1, 1.2, 1.2, 1.3, 1.1, 2.3], vertical_alignment="center")
                 with c1:
                     st.button(
                         "▶ Phát",
                         key="anim_play",
                         on_click=on_play,
-                        disabled=(total_steps <= 1 or playing_now),
+                        disabled=(max_step <= 0 or playing_now),
                         type="primary" if not playing_now else "secondary",
                         width="stretch",
-                        help="Phát lại từng bước lộ trình",
+                        help="Phát lại từng tick lộ trình",
                     )
                 with c2:
                     st.button(
@@ -446,17 +505,26 @@ def _render_map(d, queue, drivers) -> None:
                         "⏮ Phát lại",
                         key="anim_restart",
                         on_click=on_restart,
-                        disabled=(total_steps <= 1),
+                        disabled=(max_step <= 0),
                         width="stretch",
-                        help="Quay lại bước xuất phát đầu tiên",
+                        help="Quay lại tick 0 xuất phát ban đầu và phát lại",
+                    )
+                with c_skip:
+                    st.button(
+                        "⏭ Đến cuối",
+                        key="anim_skip",
+                        on_click=on_skip,
+                        disabled=(max_step <= 0 or step_idx >= max_step),
+                        width="stretch",
+                        help="Nhảy thẳng tới tick cuối cùng và hoàn tất lộ trình",
                     )
                 with c4:
                     st.selectbox(
                         "Tốc độ",
-                        options=["0.5x", "1x", "2x"],
+                        options=["1x", "2x", "4x"],
                         index=1,
                         key="anim_speed",
-                        help="Tốc độ mô phỏng lộ trình",
+                        help="Tốc độ mô phỏng lộ trình (1x / 2x / 4x)",
                     )
                 with c5:
                     st.toggle(
@@ -465,55 +533,81 @@ def _render_map(d, queue, drivers) -> None:
                         help="Tự động phát lộ trình ngay sau khi điều phối chuyến thành công",
                     )
 
-                slider_max = max(1, total_steps - 1)
+                slider_max = max(1, max_step)
                 st.slider(
-                    "Tua bước lộ trình",
+                    "Tua tick lộ trình",
                     min_value=0,
                     max_value=slider_max,
-                    disabled=(total_steps <= 1),
+                    disabled=(max_step <= 0),
                     key="anim_step",
-                    on_change=on_step_change,
-                    help="Kéo để tua đến bước bất kỳ trong lộ trình",
+                    on_change=(None if playing_now else on_step_change),
+                    help="Kéo để tua đến tick bất kỳ trong lộ trình",
                 )
 
-                render_animation_badge(timeline[step_idx])
+                if current_tick_info:
+                    # Thanh tiến độ tổng anim_progress
+                    pct_val = min(1.0, max(0.0, float(current_tick_info.progress_pct)))
+                    edge_lbl = current_tick_info.edge_label or "Lộ trình"
+                    edge_p = round(current_tick_info.edge_pct)
+                    progress_msg = f"Tiến độ toàn lộ trình: {round(pct_val * 100)}% • Đang đi: {edge_lbl} ({edge_p}%)"
+                    try:
+                        st.progress(pct_val, text=progress_msg, key="anim_progress")
+                    except TypeError:
+                        st.progress(pct_val, text=progress_msg)
 
-        # Tạo DOT đồ thị cho khung hình hiện tại
-        if total_steps > 0 and not is_last_undone:
-            current_step_info = timeline[step_idx]
+                    render_animation_badge(current_tick_info, status=anim_status)
+
+                # Dòng caption nhỏ tổng thời gian phát (YÊU CẦU 5)
+                schedule_obj = getattr(timeline, "schedule", None) or getattr(timeline, "_schedule", None)
+                if schedule_obj:
+                    est_sec = schedule_obj.total_seconds
+                else:
+                    est_sec = max_step * (timeline[0].tick_delay if timeline else 0.1)
+                st.caption(f"⏱️ Tổng thời gian phát ≈ {est_sec:.1f} giây")
+
+        # Lấy DOT đồ thị đã được tiền kết xuất trong cache (YÊU CẦU 3.a)
+        if total_frames > 0 and current_tick_info and current_tick_info.dot_string:
+            dot_dispatch = current_tick_info.dot_string
+        elif total_frames > 0 and current_tick_info:
             dot_dispatch = build_dot(
                 edges=d.graph.edges(),
                 drivers=drivers,
                 queue=queue,
                 label=S.node_label,
                 nodes=d.graph.nodes(),
-                routes=None,
+                routes=routes,
                 layout="neato",
-                highlight_node=current_step_info.node,
-                custom_edges=current_step_info.custom_edges,
+                highlight_node=current_tick_info.node,
+                custom_edges=current_tick_info.custom_edges,
+                driver_start_node=driver_start_node,
             )
         else:
-            # Chế độ bản đồ tĩnh cơ bản (xem trước hoặc khi chưa có chuyến / đã hoàn tác)
-            preview_routes = []
-            if not is_last_undone and queue:
+            # Chế độ bản đồ tĩnh (xem lộ trình chuyến đã hủy hoặc chưa có chuyến/xem trước)
+            static_routes = list(routes)
+            if not static_routes and queue:
                 free = {x.id: x.node for x in drivers.values() if x.status == FREE}
                 name = st.session_state.get("strategy_name") or next(iter(S.strategies()))
                 if free:
                     res_prev = S.strategies()[name].find_driver(d.graph, queue[0].pickup_node, free)
                     if res_prev.path:
-                        preview_routes.append((res_prev.path, "#2563eb", "dashed"))
+                        static_routes.append((res_prev.path, "#2563eb", "dashed"))
             dot_dispatch = build_dot(
                 edges=d.graph.edges(),
                 drivers=drivers,
                 queue=queue,
                 label=S.node_label,
                 nodes=d.graph.nodes(),
-                routes=preview_routes,
+                routes=static_routes,
                 layout="neato",
+                driver_start_node=driver_start_node,
             )
 
         render_graph_with_zoom(dot_dispatch, key_prefix="map_dispatch", height=500)
         st.caption(route_note + "  Viền cam: điểm đón đang chờ.")
+        if target_id and route_info is None:
+            st.info(f"Không tìm thấy lộ trình cho chuyến {target_id}.")
+        elif route_info is not None and not pickup_known:
+            st.info("Chuyến này được tạo trước khi hệ thống lưu lộ trình đón nên chỉ hiển thị chặng chở khách.")
 
     _map_animation_fragment()
 
@@ -592,18 +686,20 @@ def render() -> None:
     trips = d.trips_snapshot()
     free_count = sum(1 for x in drivers.values() if x.status == FREE)
     active_trips_count = sum(1 for t in trips if t.status == ASSIGNED)
+    cancelled_trips_count = sum(1 for t in trips if t.status == CANCELLED)
     available_strats = S.strategies()
     current_strat = st.session_state.get("strategy_name") or (next(iter(available_strats)) if available_strats else "A1")
 
     page_header(
         icon="🚕",
         title="Điều phối chuyến",
-        subtitle="Nhận yêu cầu, ghép tài xế tối ưu và hoàn tác thao tác",
+        subtitle="Nhận yêu cầu, ghép tài xế tối ưu và quản lý chuyến đi",
         chips=[
-            ("**Hàng đợi**", f"{len(queue)} --- "),
-            ("**Xe rảnh**", f"{free_count} --- "),
-            ("**Chuyến đang chạy**", f"{active_trips_count} --- "),
-            ("**Chiến lược**", f"{current_strat}"),
+            ("Hàng đợi", f"{len(queue)}"),
+            ("Xe rảnh", f"{free_count}"),
+            ("Chuyến đang chạy", f"{active_trips_count}"),
+            ("Đã hủy", f"{cancelled_trips_count}"),
+            ("Chiến lược", f"{current_strat}"),
         ],
     )
 
@@ -614,7 +710,7 @@ def render() -> None:
                 <div style="margin-bottom: 0.6rem; line-height: 1.65;">
                     <span class="qs-step">1</span><b>Đặt xe mới:</b> Mở bảng thao tác bên phải → chọn điểm đón & trả khách tại mục <i>"(1) Đặt xe"</i> → nhấn <b>"Gửi yêu cầu"</b>.<br>
                     <span class="qs-step">2</span><b>Ghép chuyến tối ưu:</b> Tại mục <i>"(3) Điều phối"</i> chọn thuật toán <b>A1</b> hoặc <b>A2</b> → nhấn <b>"Ghép chuyến"</b>.<br>
-                    <span class="qs-step">3</span><b>Hoàn tác & Hoàn thành:</b> Nhấn <b>"Undo"</b> để hủy gán chuyến; hoặc nhấn <b>"Hoàn thành chuyến"</b> trong danh sách đang chạy để kết thúc cuốc và giải phóng tài xế.
+                    <span class="qs-step">3</span><b>Hủy & Hoàn thành chuyến:</b> Nhấn <b>"Hủy chuyến"</b> để hủy chuyến đã ghép và giải phóng tài xế tại chỗ; hoặc nhấn <b>"Hoàn thành chuyến"</b> trong danh sách đang chạy để kết thúc cuốc khi khách tới nơi.
                 </div>
                 <div style="font-size: 0.82rem; color: #475569; border-top: 1px dashed #CBD5E1; padding-top: 0.45rem; margin-top: 0.45rem;">
                     <b>Ý nghĩa màu sắc trên bản đồ:</b> 🟢 Viền xanh lá = Xe rảnh &nbsp;|&nbsp; 🔴 Viền đỏ = Xe bận &nbsp;|&nbsp; 🟠 Viền cam = Điểm đón đang chờ &nbsp;|&nbsp; ── Xanh lá = Đón khách &nbsp;|&nbsp; ╌╌ Cam nét đứt = Chở khách
@@ -662,7 +758,7 @@ def render() -> None:
             )
         else:
             st.dataframe(_queue_table(filtered_queue), hide_index=True, width="stretch", height=150)
-        st.caption("💡 *Đặt xe mới, hủy yêu cầu, hoặc nhấn Ghép chuyến / Undo / Redo trên **Bảng thao tác bên phải**.*")
+        st.caption("💡 *Đặt xe mới, hủy yêu cầu, hoặc nhấn Ghép chuyến trên **Bảng thao tác bên phải**.*")
 
     # Hiển thị nút giải phóng nghẽn hàng nếu nguyên nhân là no_route
     if getattr(d, "last_failure", None) == "no_route" and queue:
@@ -687,7 +783,7 @@ def render() -> None:
         with r1_c1:
             st.multiselect(
                 "Trạng thái",
-                options=[ASSIGNED, COMPLETED],
+                options=[ASSIGNED, COMPLETED, CANCELLED],
                 format_func=status_label,
                 key="flt_trips_status",
             )

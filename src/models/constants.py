@@ -14,10 +14,14 @@ ASSIGNED = "assigned"
 # Trạng thái chuyến xe (Trip)
 COMPLETED = "completed"
 
+# Trạng thái hủy (dùng cho cả RideRequest và Trip khi hủy chuyến / hủy yêu cầu)
+CANCELLED = "cancelled"
+
 __all__ = [
     "FREE",
     "BUSY",
     "QUEUED",
     "ASSIGNED",
     "COMPLETED",
+    "CANCELLED",
 ]

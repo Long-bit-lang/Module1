@@ -29,41 +29,57 @@ def test_app_starts_without_exception(app):
     assert not app.exception
     # A1: Điều hướng bằng st.sidebar radio key="main_nav" thay cho st.tabs
     assert app.sidebar.radio(key="main_nav").options == [
-        "Quản lý dữ liệu", "Điều phối chuyến", "Đối chuẩn thuật toán"
+        "Điều phối chuyến", "Quản lý dữ liệu", "Đối chuẩn thuật toán"
     ]
-    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
+    assert app.session_state["main_nav"] == "Điều phối chuyến"
 
 
-def test_full_flow_submit_dispatch_undo_redo_complete(app):
-    # Tạo yêu cầu qua giao diện
+def test_full_flow_submit_dispatch_cancel_and_complete(app):
+    # 1. Tạo yêu cầu qua giao diện
     _pick(app, "req_pickup", "N3")
     _pick(app, "req_dropoff", "N7")
     app.button(key="btn_submit").click().run()
     assert len(_d(app).queue_snapshot()) == 1
 
-    # Điều phối -> có chuyến, tài xế bận
+    # 2. Điều phối -> có chuyến, tài xế bận
     app.button(key="btn_dispatch").click().run()
     assert not app.exception
     assert len(_d(app).trips_snapshot()) == 1 and len(_d(app).queue_snapshot()) == 0
     assert app.session_state["storage"].save_count >= 2  # tự lưu sau mỗi thao tác
 
-    # Undo -> yêu cầu về đầu hàng, tài xế rảnh; Redo -> ngược lại
-    app.button(key="btn_undo").click().run()
-    assert len(_d(app).trips_snapshot()) == 0 and len(_d(app).queue_snapshot()) == 1
-    app.button(key="btn_redo").click().run()
     trip = _d(app).trips_snapshot()[0]
+    # Xác nhận không có nút Undo/Redo nào
+    assert not any(b.key in ("btn_undo", "btn_redo") for b in app.button)
 
-    # Hoàn thành chuyến
-    app.button(key=f"btn_complete_{trip.id}").click().run()
-    assert _d(app).trips_snapshot()[0].status == "completed"
+    # 3. Hủy chuyến qua giao diện với bước xác nhận
+    app.button(key=f"btn_cancel_trip_{trip.id}").click().run()
+    assert not app.exception
+    # Dialog xác nhận xuất hiện -> nhấn xác nhận hủy
+    app.button(key=f"btn_confirm_cancel_trip_{trip.id}").click().run()
+    assert not app.exception
+
+    # Kiểm tra trạng thái sau khi hủy (D1 = A: request chuyển CANCELLED, KHÔNG quay lại queue)
+    cancelled_trip = _d(app).trips_snapshot()[0]
+    assert cancelled_trip.status == "cancelled"
+    assert _d(app).drivers_snapshot()[cancelled_trip.driver_id].status == "free"
+    assert _d(app).all_requests[cancelled_trip.request_id].status == "cancelled"
+    assert len(_d(app).queue_snapshot()) == 0
+
+    # Chuyến đã hủy không còn nút Hoàn thành hay Hủy chuyến
+    assert not any(b.key == f"btn_complete_{trip.id}" for b in app.button)
+    assert not any(b.key == f"btn_cancel_trip_{trip.id}" for b in app.button)
 
 
-def test_dispatcher_survives_rerun_so_undo_history_is_kept(app):
+def test_dispatcher_survives_rerun_state_preserved(app):
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
     app.button(key="btn_submit").click().run()
     app.button(key="btn_dispatch").click().run()
-    assert _d(app).can_undo()
-    app.run()  # rerun thuần túy không được làm mất lịch sử Undo
-    assert _d(app).can_undo()
+    assert len(_d(app).trips_snapshot()) == 1
+    app.run()  # rerun thuần túy bảo toàn trạng thái dispatcher
+    assert len(_d(app).trips_snapshot()) == 1
+    assert not any(b.key in ("btn_undo", "btn_redo") for b in app.button)
+
 
 
 def test_same_pickup_dropoff_shows_error(app):
@@ -116,20 +132,56 @@ def test_real_backend_dispatch_persists_and_tiebreaks(real_app, tmp_path):
     assert '"T3"' in (tmp_path / "trips.json").read_text(encoding="utf-8")
 
 
-def test_tab_selection_persists_on_widget_interaction(app):
-    # Ban đầu trang mặc định là "Quản lý dữ liệu"
-    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
+def test_real_backend_cancel_assigned_trip_persists(real_app, tmp_path):
+    """UI AppTest với backend real: Hủy chuyến T2 (ASSIGNED trong seed) qua dialog xác nhận và lưu vào đĩa."""
+    assert not real_app.exception
+    # Seed data có T2 đang ASSIGNED cho D3
+    assigned_trips = [t for t in _d(real_app).trips_snapshot() if t.status == "assigned"]
+    assert any(t.id == "T2" for t in assigned_trips)
+    assert _d(real_app).drivers_snapshot()["D3"].status == "busy"
 
-    # Người dùng chuyển trang sang "Điều phối chuyến" bằng st.sidebar.radio key="main_nav"
-    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    # Nhấn Hủy chuyến T2
+    real_app.button(key="btn_cancel_trip_T2").click().run()
+    assert not real_app.exception
+    # Xác nhận trong dialog
+    real_app.button(key="btn_confirm_cancel_trip_T2").click().run()
+    assert not real_app.exception
+
+    # Kiểm tra trạng thái trong bộ nhớ
+    t2 = next(t for t in _d(real_app).trips_snapshot() if t.id == "T2")
+    assert t2.status == "cancelled"
+    assert _d(real_app).drivers_snapshot()["D3"].status == "free"
+    assert _d(real_app).all_requests["R2"].status == "cancelled"
+    assert not any(r.id == "R2" for r in _d(real_app).queue_snapshot())
+
+    # Kiểm tra trạng thái đã lưu vào file trips.json và requests.json trên đĩa
+    trips_json = (tmp_path / "trips.json").read_text(encoding="utf-8")
+    assert '"status": "cancelled"' in trips_json
+    requests_json = (tmp_path / "requests.json").read_text(encoding="utf-8")
+    assert '"R2"' in requests_json
+
+    # Nút thao tác hoàn thành/hủy cho T2 không còn hiển thị
+    assert not any(b.key == "btn_cancel_trip_T2" for b in real_app.button)
+    assert not any(b.key == "btn_complete_T2" for b in real_app.button)
+    # Không còn widget undo/redo nào
+    assert not any(b.key in ("btn_undo", "btn_redo") for b in real_app.button)
+
+
+
+def test_tab_selection_persists_on_widget_interaction(app):
+    # Ban đầu trang mặc định là "Điều phối chuyến"
     assert app.session_state["main_nav"] == "Điều phối chuyến"
+
+    # Người dùng chuyển trang sang "Quản lý dữ liệu" bằng st.sidebar.radio key="main_nav"
+    app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
+    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
 
     # Người dùng tương tác với widget bên trong Action Panel (đổi điểm trả khách)
     _pick(app, "req_dropoff", "N4")
     app.run()
 
-    # Trang đang chọn vẫn là "Điều phối chuyến", radio không bị reset khi rerun
-    assert app.session_state["main_nav"] == "Điều phối chuyến"
+    # Trang đang chọn vẫn là "Quản lý dữ liệu", radio không bị reset khi rerun
+    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
 
 
 def test_reset_to_seed_restores_data(real_app, tmp_path):
@@ -138,7 +190,8 @@ def test_reset_to_seed_restores_data(real_app, tmp_path):
     real_app.button(key="btn_dispatch").click().run()
     assert '"T3"' in (tmp_path / "trips.json").read_text(encoding="utf-8")
 
-    # 2. Nhấn nút Reset về dữ liệu mẫu (Seed) và xác nhận trong dialog
+    # 2. Chuyển sang Quản lý dữ liệu, nhấn nút Reset về dữ liệu mẫu (Seed) và xác nhận trong dialog
+    real_app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
     real_app.button(key="btn_reset_seed").click().run()
     real_app.button(key="btn_confirm_reset_seed").click().run()
     assert not real_app.exception
@@ -151,6 +204,7 @@ def test_reset_to_seed_restores_data(real_app, tmp_path):
 
 def test_map_data_zoom_buttons_and_limits(app):
     """Kiểm tra nút phóng to/thu nhỏ/vừa khung trên bản đồ dữ liệu và giới hạn 50% - 300%."""
+    app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
     assert app.session_state.get("map_data_zoom_level") == 100
 
     # Phóng to (+20%)
@@ -283,7 +337,8 @@ def test_build_dot_validity_and_escaping():
 
 def test_map_canvas_containers_and_zoom_levels(app):
     """Kiểm tra khung bản đồ có key {key_prefix}_canvas và không phát sinh lỗi ở 50%, 100%, 300%."""
-    # 1. Tab mặc định là 'Quản lý dữ liệu' -> kiểm tra key 'map_data_canvas'
+    # 1. Chuyển sang 'Quản lý dữ liệu' -> kiểm tra key 'map_data_canvas'
+    app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
     assert not app.exception
     container_keys = [c.key for c in app.container if c.key]
     assert "map_data_canvas" in container_keys
@@ -331,35 +386,33 @@ def test_map_canvas_containers_and_zoom_levels(app):
     assert "map_dispatch_canvas" in container_keys
 
 
-def test_page_switch_preserves_dispatcher_and_undo(app):
-    """Ràng buộc 5: Đổi trang không làm mất trạng thái dispatcher và ngăn xếp Undo/Redo."""
+def test_page_switch_preserves_dispatcher_state_and_allows_cancel(app):
+    """Ràng buộc 5: Đổi trang không làm mất trạng thái dispatcher và cho phép hủy chuyến."""
     # 1. Tạo yêu cầu và điều phối chuyến trên Action panel
     _pick(app, "req_pickup", "N3")
     _pick(app, "req_dropoff", "N7")
     app.button(key="btn_submit").click().run()
     app.button(key="btn_dispatch").click().run()
-    assert _d(app).can_undo()
     assert len(_d(app).trips_snapshot()) == 1
 
     # 2. Chuyển sang trang "Quản lý dữ liệu"
     app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
     assert app.session_state["main_nav"] == "Quản lý dữ liệu"
-    assert _d(app).can_undo()
     assert len(_d(app).trips_snapshot()) == 1
 
     # 3. Chuyển sang trang "Đối chuẩn thuật toán"
     app.sidebar.radio(key="main_nav").set_value("Đối chuẩn thuật toán").run()
     assert app.session_state["main_nav"] == "Đối chuẩn thuật toán"
-    assert _d(app).can_undo()
+    assert len(_d(app).trips_snapshot()) == 1
 
-    # 4. Chuyển lại "Điều phối chuyến" và thực hiện Undo thành công
+    # 4. Chuyển lại "Điều phối chuyến" và thực hiện Hủy chuyến thành công
     app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
     assert app.session_state["main_nav"] == "Điều phối chuyến"
-    assert _d(app).can_undo()
-    app.button(key="btn_undo").click().run()
-    assert not _d(app).can_undo()
-    assert len(_d(app).trips_snapshot()) == 0
-    assert len(_d(app).queue_snapshot()) == 1
+    trip = _d(app).trips_snapshot()[0]
+    app.button(key=f"btn_cancel_trip_{trip.id}").click().run()
+    app.button(key=f"btn_confirm_cancel_trip_{trip.id}").click().run()
+    assert _d(app).trips_snapshot()[0].status == "cancelled"
+
 
 
 def test_panel_toggle_changes_panel_open(app):
@@ -402,6 +455,7 @@ def test_success_notification_persists_after_one_rerun(app):
 def test_table_filtering_reduces_rows_and_reset_restores(app):
     """Ràng buộc 5: Bộ lọc làm giảm số dòng hiển thị và nút xóa lọc khôi phục lại dữ liệu ban đầu."""
     # 1. Kiểm tra bộ lọc trên bảng Tài xế (Quản lý dữ liệu)
+    app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
     assert app.session_state["main_nav"] == "Quản lý dữ liệu"
     drivers_df = app.dataframe[1].value
     initial_driver_count = len(drivers_df)
@@ -477,21 +531,21 @@ def test_page_headers_distinct_per_page(app):
 
     Phương pháp kiểm tra: Qua `app.markdown`, trích xuất markdown có class 'page-header' và kiểm tra tiêu đề.
     """
-    # 1. Trang mặc định ban đầu: "Quản lý dữ liệu"
-    assert app.session_state["main_nav"] == "Quản lý dữ liệu"
-    headers = [m.value for m in app.markdown if '<div class="page-header">' in m.value]
-    assert len(headers) == 1
-    assert "Quản lý dữ liệu" in headers[0]
-    assert "Điều phối chuyến" not in headers[0]
-    assert "Đối chuẩn thuật toán" not in headers[0]
-
-    # 2. Chuyển sang "Điều phối chuyến"
-    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
-    assert not app.exception
+    # 1. Trang mặc định ban đầu: "Điều phối chuyến"
+    assert app.session_state["main_nav"] == "Điều phối chuyến"
     headers = [m.value for m in app.markdown if '<div class="page-header">' in m.value]
     assert len(headers) == 1
     assert "Điều phối chuyến" in headers[0]
     assert "Quản lý dữ liệu" not in headers[0]
+    assert "Đối chuẩn thuật toán" not in headers[0]
+
+    # 2. Chuyển sang "Quản lý dữ liệu"
+    app.sidebar.radio(key="main_nav").set_value("Quản lý dữ liệu").run()
+    assert not app.exception
+    headers = [m.value for m in app.markdown if '<div class="page-header">' in m.value]
+    assert len(headers) == 1
+    assert "Quản lý dữ liệu" in headers[0]
+    assert "Điều phối chuyến" not in headers[0]
     assert "Đối chuẩn thuật toán" not in headers[0]
 
     # 3. Chuyển sang "Đối chuẩn thuật toán"
@@ -599,7 +653,7 @@ def test_map_animation_dispatch_and_slider_scrub(app):
 
 
 def test_map_animation_play_and_auto_stop_at_end(app):
-    """Kiểm thử: nhấn Phát (anim_play) chạy từng bước và tự động dừng khi đến bước cuối cùng."""
+    """Kiểm thử: nhấn Phát (anim_play) chạy từng bước mượt mà và tự động dừng khi đến tick cuối cùng."""
     app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
     assert not app.exception
 
@@ -617,8 +671,8 @@ def test_map_animation_play_and_auto_stop_at_end(app):
     assert not app.exception
     assert app.session_state.get("anim_playing") is True
 
-    # Cho chạy qua các tick cho đến khi hết bước
-    max_ticks = 15
+    # Cho chạy qua các tick cho đến khi hết bước (chạy liên tục, không bị ngắt giữa chừng)
+    max_ticks = 60
     ticks = 0
     while app.session_state.get("anim_playing", False) and ticks < max_ticks:
         app.run()
@@ -627,10 +681,37 @@ def test_map_animation_play_and_auto_stop_at_end(app):
 
     # Đã tự động dừng khi đến bước cuối cùng
     assert app.session_state["anim_playing"] is False
+    slider = [s for s in app.slider if s.key == "anim_step"][0]
+    assert app.session_state["anim_step"] == slider.max
 
 
-def test_map_animation_undo_hides_playback_controls(app):
-    """Kiểm thử xử lý biên: sau khi Undo thì ẩn nút phát (anim_play) và thông báo 'chuyến đã hoàn tác'."""
+def test_map_animation_pause_stops_playback(app):
+    """Kiểm thử: khi đang phát, bấm Tạm dừng (anim_pause) thì dừng ngay tại tick hiện tại."""
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    app.button(key="btn_dispatch").click().run()
+
+    app.button(key="anim_play").click().run()
+    assert app.session_state.get("anim_playing") is True
+
+    # Chạy 3 tick
+    for _ in range(3):
+        app.run()
+        assert app.session_state.get("anim_playing") is True
+
+    # Nhấn Tạm dừng
+    app.button(key="anim_pause").click().run()
+    assert not app.exception
+    assert app.session_state["anim_playing"] is False
+    assert 0 < app.session_state["anim_step"] < 30
+
+
+def test_map_animation_cancel_trip_hides_playback_controls(app):
+    """Kiểm thử xử lý biên: sau khi Hủy chuyến thì ẩn nút phát (anim_play) và cập nhật thẻ kết quả."""
     app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
     assert not app.exception
 
@@ -644,67 +725,255 @@ def test_map_animation_undo_hides_playback_controls(app):
     assert not app.exception
     assert any(b.key == "anim_play" for b in app.button)
 
-    # Nhấn Hoàn tác (btn_undo)
-    app.button(key="btn_undo").click().run()
+    trip = _d(app).trips_snapshot()[0]
+    # Nhấn Hủy chuyến và xác nhận
+    app.button(key=f"btn_cancel_trip_{trip.id}").click().run()
+    app.button(key=f"btn_confirm_cancel_trip_{trip.id}").click().run()
     assert not app.exception
 
-    # Nút phát anim_play phải bị ẩn sau khi hoàn tác
+    # Nút phát anim_play phải bị ẩn sau khi hủy chuyến
     assert not any(b.key == "anim_play" for b in app.button)
 
-    # Có thông báo chuyến đã hoàn tác
-    all_text = " ".join([m.value for m in app.info] + [m.value for m in app.warning] + [m.value for m in app.markdown])
-    assert "chuyến" in all_text.lower() and "hoàn tác" in all_text.lower()
+    # Thẻ kết quả điều phối gắn nhãn 'Chuyến đã hủy'
+    assert app.session_state.get("last_dispatch", {}).get("status_tag") == "Chuyến đã hủy"
 
 
-def test_build_animation_timeline_unit_contract():
-    """Kiểm thử đơn vị cho hàm build_animation_timeline: tính toán thời gian ảo, độ trễ và nét vẽ."""
-    from ui.components import build_animation_timeline
 
+
+def test_build_animation_ticks_unit_contract():
+    """Kiểm thử đơn vị hàm tạo tick: số tick mỗi cạnh trong [2, 6], tổng tick = tổng các cạnh, tick cuối trùng đỉnh đích."""
+    from ui.components import build_animation_ticks, compute_edge_ticks
+    from ui.constants import (
+        ANIM_MAX_INTERVAL,
+        ANIM_MIN_INTERVAL,
+        ANIM_TICKS_PER_EDGE_MAX,
+        ANIM_TICKS_PER_EDGE_MIN,
+    )
+
+    # 1. Kiểm tra hàm compute_edge_ticks: luôn trong [2, 6]
+    test_weights = [0.1, 0.5, 1.0, 2.0, 3.5, 5.0, 6.0, 10.0, 25.0]
+    for w in test_weights:
+        n = compute_edge_ticks(w)
+        assert ANIM_TICKS_PER_EDGE_MIN <= n <= ANIM_TICKS_PER_EDGE_MAX
+        assert isinstance(n, int)
+
+    # Trọng số cụ thể theo công thức clamp(round(w / 1.0), 2, 6)
+    assert compute_edge_ticks(0.5) == 2
+    assert compute_edge_ticks(2.0) == 2
+    assert compute_edge_ticks(4.0) == 4
+    assert compute_edge_ticks(6.0) == 6
+
+    # 2. Kiểm tra build_animation_ticks cho lộ trình gồm đón khách và chở khách
     edges = [("A", "B", 4.0), ("B", "C", 6.0), ("C", "D", 2.0)]
     def lbl(x): return f"Đỉnh {x}"
 
-    # 1. Trường hợp bình thường: chặng đón (A->B), chặng chở (B->C->D)
-    timeline = build_animation_timeline(["A", "B"], ["B", "C", "D"], edges, lbl, speed_mult=1.0)
-    assert len(timeline) == 4  # A, B, C, D
+    timeline = build_animation_ticks(["A", "B"], ["B", "C", "D"], edges, lbl, speed_mult=1.0)
+    # Cạnh A->B: w=4.0 -> 4 tick; B->C: w=6.0 -> 6 tick; C->D: w=2.0 -> 2 tick
+    # Tổng số tick = 4 + 6 + 2 = 12 tick.
+    # Số khung hình = 12 + 1 = 13 (từ tick 0 đến tick 12).
+    total_ticks = 4 + 6 + 2
+    assert len(timeline) == total_ticks + 1
+    assert timeline[0].total_ticks == total_ticks
+    assert timeline[-1].total_ticks == total_ticks
 
-    # Bước 0 (tại A): T+0, đón khách, các cạnh sắp tới đều nét đứt
-    assert timeline[0].step_index == 0
+    # Tick 0: tại A, xuất phát, T+0, 0%
+    assert timeline[0].tick_index == 0
     assert timeline[0].node == "A"
     assert timeline[0].elapsed_time == 0.0
-    assert "0.3" <= str(timeline[0].step_delay) <= "1.2"
-    assert 0.3 <= timeline[0].step_delay <= 1.2
-    assert timeline[0].custom_edges[("A", "B")][1] == "dashed"  # sắp tới
-    assert "Bước 1/4" in timeline[0].caption
+    assert timeline[0].progress_pct == 0.0
+    assert "Xuất phát" in timeline[0].caption or "0%" in timeline[0].caption
 
-    # Bước 1 (tại B): T+4, điểm đón, cạnh A->B đã đi nét liền
-    assert timeline[1].step_index == 1
-    assert timeline[1].node == "B"
-    assert timeline[1].elapsed_time == 4.0
-    assert timeline[1].custom_edges[("A", "B")][1] == "solid"
-    assert timeline[1].custom_edges[("B", "C")][1] == "dashed"
+    # Tick cuối: tại D (trùng đỉnh đích!), T+12 (4 + 6 + 2), 100%
+    assert timeline[-1].tick_index == total_ticks
+    assert timeline[-1].node == "D"
+    assert timeline[-1].elapsed_time == 12.0
+    assert timeline[-1].progress_pct == 1.0
+    assert "Đã đến Đỉnh D" in timeline[-1].caption or "100%" in timeline[-1].caption
 
-    # Bước 3 (tại D): T+12 (4 + 6 + 2), tất cả cạnh đã đi nét liền
-    assert timeline[3].step_index == 3
-    assert timeline[3].node == "D"
-    assert timeline[3].elapsed_time == 12.0
-    assert timeline[3].custom_edges[("A", "B")][1] == "solid"
-    assert timeline[3].custom_edges[("B", "C")][1] == "solid"
-    assert timeline[3].custom_edges[("C", "D")][1] == "solid"
+    # Cạnh đang đi luân phiên nét nét đặc (solid 5.0) và nét đứt (dashed 3.5)
+    # Tick 1 (chẵn=False) -> dashed 3.5; Tick 2 (chẵn=True) -> solid 5.0
+    assert timeline[1].custom_edges[("A", "B")][1] == "dashed"
+    assert timeline[1].custom_edges[("A", "B")][2] == 3.5
+    assert timeline[2].custom_edges[("A", "B")][1] == "solid"
+    assert timeline[2].custom_edges[("A", "B")][2] == 5.0
 
-    # 2. Giới hạn độ trễ [0.3, 1.2] với các tốc độ khác nhau
-    for spd in [0.5, 1.0, 2.0]:
-        t = build_animation_timeline(["A", "B", "C"], None, edges, lbl, speed_mult=spd)
-        for s in t:
-            assert 0.3 <= s.step_delay <= 1.2
+    # Cạnh đã đi qua nét liền penwidth 3.5
+    # Tại tick 5 (đã qua 4 tick cạnh A->B và đang ở cạnh B->C):
+    assert timeline[5].custom_edges[("A", "B")][1] == "solid"
+    assert timeline[5].custom_edges[("A", "B")][2] == 3.5
 
-    # 3. Biên: 1 đỉnh
-    t_single = build_animation_timeline(["A"], None, edges, lbl)
+    # 3. Giới hạn độ trễ thực tế giữa các tick: trong khoảng [ANIM_MIN_INTERVAL, ANIM_MAX_INTERVAL]
+    for tick in timeline:
+        assert ANIM_MIN_INTERVAL <= tick.tick_delay <= ANIM_MAX_INTERVAL
+
+    # 4. Xử lý biên: lộ trình 1 đỉnh trả danh sách an toàn 1 khung hình
+    t_single = build_animation_ticks(["A"], None, edges, lbl)
     assert len(t_single) == 1
+    assert t_single[0].node == "A"
     assert t_single[0].elapsed_time == 0.0
 
-    # 4. Biên: rỗng
-    t_empty = build_animation_timeline([], None, edges, lbl)
+    # 5. Xử lý biên: lộ trình rỗng trả danh sách rỗng
+    t_empty = build_animation_ticks([], None, edges, lbl)
     assert len(t_empty) == 0
+
+
+def test_playback_schedule_short_medium_long_routes_contract():
+    """Kiểm thử ngân sách thời gian: lộ trình ngắn (3), vừa (6), dài (15) ở 1x in [2, 8s], ở 4x ≈ 1/4, số khung ≥ 8."""
+    from ui.components import build_animation_ticks
+    from ui.constants import ANIM_MAX_SECONDS, ANIM_MIN_INTERVAL
+
+    edges = [(f"N{i}", f"N{i+1}", 2.0) for i in range(1, 16)]
+    lbl = lambda x: f"Đỉnh {x}"
+
+    routes = [
+        ("short", [f"N{i}" for i in range(1, 4)]),   # 3 đỉnh
+        ("medium", [f"N{i}" for i in range(1, 7)]),  # 6 đỉnh
+        ("long", [f"N{i}" for i in range(1, 16)]),  # 15 đỉnh
+    ]
+
+    for name, path in routes:
+        # Tốc độ 1x
+        t_1x = build_animation_ticks(path, None, edges, lbl, speed_mult=1.0)
+        dur_1x = (len(t_1x) - 1) * t_1x[0].tick_delay
+        assert 2.0 <= dur_1x <= ANIM_MAX_SECONDS, f"{name} 1x thời gian {dur_1x}s nằm ngoài [2.0, {ANIM_MAX_SECONDS}]"
+        assert len(t_1x) >= 8, f"{name} 1x số khung {len(t_1x)} < 8"
+        assert t_1x[0].tick_delay >= ANIM_MIN_INTERVAL
+
+        # Tốc độ 4x
+        t_4x = build_animation_ticks(path, None, edges, lbl, speed_mult=4.0)
+        dur_4x = (len(t_4x) - 1) * t_4x[0].tick_delay
+        assert t_4x[0].tick_delay >= ANIM_MIN_INTERVAL
+        assert len(t_4x) >= 8, f"{name} 4x số khung {len(t_4x)} < 8"
+        assert dur_4x <= dur_1x / 2.0 + 0.1, f"{name} 4x thời gian {dur_4x}s không nhanh hơn đáng kể so với 1x ({dur_1x}s)"
+        if name == "long":
+            # Với lộ trình dài 15 đỉnh, thời gian 4x (1.12s) xấp xỉ 1/4 của 1x (4.0s)
+            assert abs(dur_4x - (dur_1x / 4.0)) <= 0.25
+
+
+def test_map_animation_skip_button_jumps_to_end(app):
+    """AppTest: bấm nút anim_skip thì trạng thái chuyển thành 'Hoàn tất', không exception, nút bị disable."""
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+
+    # Kiểm tra nút Đến cuối (anim_skip) xuất hiện
+    skip_btns = [b for b in app.button if b.key == "anim_skip"]
+    assert len(skip_btns) == 1
+    assert not skip_btns[0].disabled
+
+    # Bấm Đến cuối
+    app.button(key="anim_skip").click().run()
+    assert not app.exception
+
+    # Kiểm tra trạng thái hoàn tất
+    slider = [s for s in app.slider if s.key == "anim_step"][0]
+    assert app.session_state["anim_step"] == slider.max
+    all_text = " ".join([m.value for m in app.markdown])
+    assert "Hoàn tất" in all_text
+
+    # Sau khi đến cuối, nút Đến cuối bị vô hiệu hóa
+    skip_btn = [b for b in app.button if b.key == "anim_skip"][0]
+    assert skip_btn.disabled
+
+
+def test_map_animation_speed_select_options_and_default(app):
+    """AppTest: tùy chọn tốc độ anim_speed gồm 1x, 2x, 4x, mặc định 2x; đổi qua cả 3 giá trị không lỗi."""
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+
+    speed_boxes = [s for s in app.selectbox if s.key == "anim_speed"]
+    assert len(speed_boxes) == 1
+    box = speed_boxes[0]
+    assert box.options == ["1x", "2x", "4x"]
+    assert box.value == "2x"
+
+    # Lần lượt chuyển qua cả 3 tốc độ không gây exception
+    for speed_val in ["1x", "2x", "4x"]:
+        app.selectbox(key="anim_speed").select(speed_val).run()
+        assert not app.exception
+        # Kiểm tra caption tổng thời gian phát hiển thị đúng
+        captions = [c.value for c in app.caption if "Tổng thời gian phát ≈" in c.value]
+        assert len(captions) >= 1
+
+
+def test_map_animation_scrub_many_values_and_completed_status(app):
+    """AppTest: ghép chuyến, đặt anim_step ở nhiều giá trị không có exception, tua đến tick cuối hiển thị Hoàn tất."""
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    # Gửi yêu cầu đặt xe và ghép chuyến
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+
+    sliders = [s for s in app.slider if s.key == "anim_step"]
+    assert len(sliders) == 1
+    slider = sliders[0]
+    max_val = int(slider.max)
+    assert max_val >= 4
+
+    # Đặt anim_step ở nhiều giá trị: 0, 1, nửa chừng, và cuối cùng
+    for test_step in [0, 1, max_val // 2, max_val]:
+        app.slider(key="anim_step").set_value(test_step).run()
+        assert not app.exception
+        assert app.session_state["anim_step"] == test_step
+
+    # Khi tua đến tick cuối cùng, trạng thái là Hoàn tất
+    all_text = " ".join([m.value for m in app.markdown])
+    assert "Hoàn tất" in all_text
+
+    # anim_progress được cập nhật trong session_state
+    assert "anim_progress" in app.session_state
+    assert 0.0 <= float(app.session_state["anim_progress"]) <= 1.0
+
+
+def test_map_animation_consecutive_dispatches_rebuild_cache(app):
+    """AppTest: ghép 2 chuyến liên tiếp thì danh sách khung hình (timeline cache) được dựng lại (không dùng khung cũ)."""
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    # Ghép chuyến 1: N3 -> N7
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+
+    cache_key_1 = app.session_state.get("_anim_timeline_cache_key")
+    assert cache_key_1 is not None
+
+    # Ghép chuyến 2: N2 -> N5
+    _pick(app, "req_pickup", "N2")
+    _pick(app, "req_dropoff", "N5")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+
+    cache_key_2 = app.session_state.get("_anim_timeline_cache_key")
+    assert cache_key_2 is not None
+    # Khóa cache của chuyến 2 phải khác chuyến 1 -> timeline được dựng lại
+    assert cache_key_2 != cache_key_1
 
 
 def test_dispatch_failure_renders_without_key_error_result(app):
@@ -763,4 +1032,156 @@ def test_benchmark_header_bold_xe_ranh_chip(app):
     headers = [m.value for m in app.markdown if '<div class="page-header">' in m.value]
     assert len(headers) == 1
     assert "<strong>Xe rảnh</strong>:" in headers[0]
+
+
+# =====================================================================
+# 10. KIỂM THỬ XEM LẠI LỘ TRÌNH ĐỦ HAI CHẶNG TRONG LỊCH SỬ (PICKUP_PATH)
+# =====================================================================
+
+
+def test_ui_history_trip_renders_both_legs_after_completion(app):
+    """UI AppTest (mock):
+    - Ghép chuyến mới -> hoàn thành chuyến.
+    - Chọn xem lại chuyến đó trong lịch sử: bản đồ dùng đủ 2 chặng:
+      + Chặng đón: màu xanh lá #16a34a, nét solid.
+      + Chặng chở: màu cam #ea580c, nét dashed.
+    - Kiểm tra qua chuỗi DOT trong proto.spec của graphviz_chart.
+    - F5/rerun không làm mất chặng xanh.
+    """
+    app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not app.exception
+
+    # Gửi yêu cầu đặt xe N3 -> N7
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+
+    # Ghép chuyến
+    app.button(key="btn_dispatch").click().run()
+    assert not app.exception
+    trip = _d(app).trips_snapshot()[0]
+
+    # Hoàn thành chuyến
+    app.button(key=f"btn_complete_{trip.id}").click().run()
+    assert not app.exception
+    completed_trip = _d(app).trips_snapshot()[0]
+    assert completed_trip.status == "completed"
+
+    # Chọn chuyến trong selectbox lịch sử (nếu có selectbox)
+    selectboxes = [s for s in app.selectbox if s.key == "anim_trip_select"]
+    if selectboxes:
+        opt = next(o for o in selectboxes[0].options if trip.id in o)
+        selectboxes[0].select(opt).run()
+        assert not app.exception
+
+    # Kiểm tra chuỗi DOT được truyền vào st.graphviz_chart
+    charts = app.get("graphviz_chart")
+    assert len(charts) > 0
+    dot_spec = charts[-1].proto.spec
+
+    # Kiểm tra đủ 2 chặng trong DOT: chặng xanh lá (#16a34a) và chặng cam (#ea580c)
+    assert "#16a34a" in dot_spec, "Lộ trình đón (xanh lá) phải xuất hiện trong DOT"
+    assert "#ea580c" in dot_spec, "Lộ trình chở khách (cam) phải xuất hiện trong DOT"
+    assert "solid" in dot_spec
+    assert "dashed" in dot_spec
+
+    # Chú giải dưới bản đồ có thông tin cả 2 chặng kèm ETA
+    captions = [c.value for c in app.caption]
+    assert any("Xanh lá: xe đến điểm đón" in c and "Cam nét đứt: chở khách đến điểm trả" in c for c in captions)
+
+    # F5 / rerun lại ứng dụng: không làm mất chặng xanh
+    app.run()
+    assert not app.exception
+    reloaded_charts = app.get("graphviz_chart")
+    reloaded_dot = reloaded_charts[-1].proto.spec
+    assert "#16a34a" in reloaded_dot
+    assert "#ea580c" in reloaded_dot
+
+
+def test_ui_seed_t1_history_shows_legacy_info_message(real_app, tmp_path):
+    """UI AppTest (real backend):
+    - Chọn chuyến seed T1 (COMPLETED, không có pickup_path).
+    - Hiển thị st.info: 'Chuyến này được tạo trước khi hệ thống lưu lộ trình đón nên chỉ hiển thị chặng chở khách.'
+    - Không phát sinh exception.
+    - Bản đồ hiển thị chặng cam (chở khách), không có chặng xanh.
+    """
+    real_app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not real_app.exception
+
+    # Chọn chuyến seed T1
+    selectboxes = [s for s in real_app.selectbox if s.key == "anim_trip_select"]
+    assert len(selectboxes) > 0
+    t1_opt = next(o for o in selectboxes[0].options if "T1" in o)
+    selectboxes[0].select(t1_opt).run()
+    assert not real_app.exception
+
+    # Kiểm tra banner st.info giải thích dữ liệu cũ
+    infos = [i.value for i in real_app.info]
+    assert any("Chuyến này được tạo trước khi hệ thống lưu lộ trình đón nên chỉ hiển thị chặng chở khách." in i for i in infos)
+
+    # Kiểm tra DOT: có chặng cam (#ea580c), không có chặng xanh đón (#16a34a)
+    charts = real_app.get("graphviz_chart")
+    assert len(charts) > 0
+    dot_spec = charts[-1].proto.spec
+    assert "#ea580c" in dot_spec
+    assert "#16a34a" not in dot_spec
+
+
+def test_ui_seed_t2_assigned_shows_both_legs(real_app, tmp_path):
+    """UI AppTest (real backend):
+    - Chuyến seed T2 (ASSIGNED) hiển thị đủ hai chặng nhờ suy ra từ vị trí tài xế.
+    - Không hiện banner st.info dữ liệu cũ.
+    """
+    real_app.sidebar.radio(key="main_nav").set_value("Điều phối chuyến").run()
+    assert not real_app.exception
+
+    # Chọn chuyến seed T2
+    selectboxes = [s for s in real_app.selectbox if s.key == "anim_trip_select"]
+    assert len(selectboxes) > 0
+    t2_opt = next(o for o in selectboxes[0].options if "T2" in o)
+    selectboxes[0].select(t2_opt).run()
+    assert not real_app.exception
+
+    # Kiểm tra DOT có cả 2 chặng
+    charts = real_app.get("graphviz_chart")
+    assert len(charts) > 0
+    dot_spec = charts[-1].proto.spec
+    assert "#16a34a" in dot_spec
+    assert "#ea580c" in dot_spec
+
+    # Không hiện banner dữ liệu cũ
+    infos = [i.value for i in real_app.info]
+    assert not any("Chuyến này được tạo trước khi hệ thống lưu lộ trình đón" in i for i in infos)
+
+
+def test_cancel_queued_request_flow(app):
+    """Kiểm tra hủy yêu cầu trong hàng đợi (cancel_request) qua UI hoạt động đúng."""
+    from ui.session import item_id
+    assert item_id("R16 (N3 – Cầu Rồng → N7 – Bến xe)") == "R16"
+    assert item_id("R16 (N3 → N7)") == "R16"
+    assert item_id("N3 – Cầu Rồng") == "N3"
+
+    # Tạo yêu cầu mới
+    _pick(app, "req_pickup", "N3")
+    _pick(app, "req_dropoff", "N7")
+    app.button(key="btn_submit").click().run()
+    assert not app.exception
+    queue = _d(app).queue_snapshot()
+    assert len(queue) == 1
+    req = queue[0]
+
+    # Chọn yêu cầu cần hủy trong selectbox
+    sel = next(s for s in app.selectbox if s.key == "cancel_req_select")
+    target_opt = next(o for o in sel.options if req.id in o)
+    sel.select(target_opt).run()
+
+    # Nhấn Hủy yêu cầu -> dialog xuất hiện -> nhấn Xác nhận hủy
+    app.button(key="btn_cancel_request").click().run()
+    app.button(key="btn_confirm_cancel_request").click().run()
+    assert not app.exception
+
+    # Kiểm tra hàng đợi và all_requests đã được xóa
+    assert len(_d(app).queue_snapshot()) == 0
+    assert req.id not in _d(app).all_requests
 
