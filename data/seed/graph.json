@@ -80,6 +80,7 @@
     {"from": "N15", "to": "N8", "weight": 6.0},
     {"from": "N21", "to": "N17", "weight": 1.5},
     {"from": "N18", "to": "N4", "weight": 8.0},
-    {"from": "N12", "to": "N23", "weight": 15.0}
+    {"from": "N12", "to": "N23", "weight": 15.0},
+    {"from": "N26", "to": "N14", "weight": 30.0}
   ]
 }
